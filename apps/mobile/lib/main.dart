@@ -1,0 +1,4 @@
+import 'package:flutter/material.dart';
+void main() => runApp(const RentalOsApp());
+class RentalOsApp extends StatelessWidget { const RentalOsApp({super.key}); @override Widget build(BuildContext context) => MaterialApp(title: 'RentalOS', theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true), home: const Dashboard()); }
+class Dashboard extends StatelessWidget { const Dashboard({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('RentalOS')), body: ListView(padding: const EdgeInsets.all(20), children: const [Text('Your rentals', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)), SizedBox(height: 20), Card(child: ListTile(title: Text('Invoices'), subtitle: Text('View rent invoices and payment status'), leading: Icon(Icons.receipt_long))), Card(child: ListTile(title: Text('Maintenance'), subtitle: Text('Raise and track maintenance requests'), leading: Icon(Icons.build)))])); }

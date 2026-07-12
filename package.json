@@ -1,0 +1,13 @@
+{
+  "name": "rentalos",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @rentalos/api --filter @rentalos/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm --filter @rentalos/api test",
+    "format": "prettier --write ."
+  },
+  "devDependencies": { "prettier": "^3.4.2", "typescript": "^5.7.2" }
+}

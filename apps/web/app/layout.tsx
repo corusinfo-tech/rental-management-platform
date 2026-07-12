@@ -1,0 +1,1 @@
+import './globals.css'; import type { Metadata } from 'next'; export const metadata: Metadata = { title: 'RentalOS', description: 'Rental management operations' }; export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="en"><body>{children}</body></html>; }
