@@ -1,111 +1,36 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: rentalos-postgres
-    restart: unless-stopped
-
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
+      POSTGRES_DB: rentalos
+      POSTGRES_USER: rentalos
+      POSTGRES_PASSWORD: rentalos
+    ports: ["5432:5432"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U rentalos"]
+      interval: 5s
       timeout: 5s
       retries: 10
-
-    networks:
-      - rentalos
-
   redis:
     image: redis:7-alpine
-    container_name: rentalos-redis
-    restart: unless-stopped
-
-    command: redis-server --appendonly yes
-
-    volumes:
-      - redis_data:/data
-
+    ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 10
-
-    networks:
-      - rentalos
-
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports: ["1025:1025", "8025:8025"]
   api:
-    container_name: rentalos-api
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-
-    restart: unless-stopped
-
-    env_file:
-      - .env.production
-
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: .env
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-    ports:
-      - "127.0.0.1:3101:3001"
-
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-    networks:
-      - rentalos
-
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["3001:3001"]
   web:
-    container_name: rentalos-web
-
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-
-    restart: unless-stopped
-
-    depends_on:
-      api:
-        condition: service_started
-
-    env_file:
-      - .env.production
-
-    environment:
-      NEXT_PUBLIC_API_URL: https://api.noagent4u.com/api/v1
-
-    ports:
-      - "127.0.0.1:3100:3000"
-
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-    networks:
-      - rentalos
-
-networks:
-  rentalos:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  redis_data:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    environment: { NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1 }
+    depends_on: [api]
+    ports: ["3000:3000"]
