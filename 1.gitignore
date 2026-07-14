@@ -1,0 +1,24 @@
+# Dependencies and package-manager files
+node_modules/
+.pnpm-store/
+
+# Build artifacts and caches
+dist/
+.next/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# Environment and local configuration
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs and operating-system files
+*.log
+.DS_Store
+
+# Editor files
+.idea/
+.vscode/
