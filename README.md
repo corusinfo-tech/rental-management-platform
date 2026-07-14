@@ -1,31 +1,42 @@
-# RentalOS
+# NoAgent4U
 
-RentalOS is a multi-tenant rental-management SaaS. It uses a modular NestJS API, Next.js web app, Flutter mobile app, PostgreSQL, Redis, and BullMQ.
+Repository foundation for the NoAgent4U platform.
 
-## Quick start
+## Structure
+
+- `apps/` — deployable API, web, worker, and scheduler applications.
+- `packages/` — shared platform packages.
+- `prisma/` — future database schemas, migrations, and seeds.
+- `docs/`, `docker/`, `infra/`, `scripts/`, `tests/` — documentation, container, infrastructure, automation, and test assets.
+
+## Commands
 
 ```bash
-cp .env.example .env
-docker compose up --build
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm lint
+pnpm test
 ```
 
-The API runs at `http://localhost:3001/api/v1`, Swagger at `/docs`, and the web app at `http://localhost:3000`.
+This milestone intentionally contains configuration and package boundaries only. It does not include application code, authentication, Prisma models, or database migrations.
 
-## Architecture
+## API foundation
 
-- `apps/api` — NestJS modular monolith with clean domain boundaries.
-- `apps/web` — Next.js App Router operations portal.
-- `apps/mobile` — Flutter tenant and landlord application.
-- `packages/contracts` — versioned API contracts shared by TypeScript clients.
-- `infra` — deployment and operational artefacts.
+The NestJS API exposes `GET /health` and Swagger UI at `GET /docs`. Both responses include `x-request-id` and `x-correlation-id` headers. Request validation, response envelopes, exception handling, and structured application logging are configured globally.
 
-Every tenant-owned table includes `tenant_id`. Requests resolve tenant context from the authenticated user, never from an untrusted body field. Domain modules depend on application ports, not implementation details, to allow gradual extraction into microservices.
+## Local infrastructure
 
-## Invoice behaviour
+Start the local infrastructure with `docker compose up -d`. Copy `.env.example` to `.env` first if you need to override any defaults.
 
-Invoices are manual by default. A landlord explicitly creates an invoice from an active agreement. Automatic generation is opt-in per agreement and its job verifies the agreement is active and has not been vacated or cancelled immediately before issuing an invoice.
+| Service       | Host port                     | Purpose                          |
+| ------------- | ----------------------------- | -------------------------------- |
+| PostgreSQL 16 | `5432` (`POSTGRES_PORT`)      | PostgreSQL database              |
+| Redis         | `6379` (`REDIS_PORT`)         | Cache and BullMQ backend         |
+| pgAdmin       | `5050` (`PGADMIN_PORT`)       | PostgreSQL administration UI     |
+| MinIO API     | `9000` (`MINIO_API_PORT`)     | S3-compatible object-storage API |
+| MinIO Console | `9001` (`MINIO_CONSOLE_PORT`) | MinIO administration UI          |
+| Mailpit SMTP  | `1025` (`MAILPIT_SMTP_PORT`)  | Local email capture SMTP server  |
+| Mailpit UI    | `8025` (`MAILPIT_UI_PORT`)    | Captured-email web UI            |
 
-## API envelope
-
-Successful responses: `{ "success": true, "data": {}, "meta": {} }`.
-Failures: `{ "success": false, "error": { "code", "message", "details", "traceId" } }`.
+No application containers are defined in the Compose file.

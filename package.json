@@ -1,13 +1,31 @@
 {
-  "name": "rentalos",
+  "name": "noagent4u",
+  "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@9.15.0",
-  "scripts": {
-    "dev": "pnpm --parallel --filter @rentalos/api --filter @rentalos/web dev",
-    "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
-    "test": "pnpm --filter @rentalos/api test",
-    "format": "prettier --write ."
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=20.9.0",
+    "pnpm": ">=9.15.0"
   },
-  "devDependencies": { "prettier": "^3.4.2", "typescript": "^5.7.2" }
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "verify": "bash scripts/verify.sh",
+    "migrate": "prisma migrate deploy --schema prisma/schemas",
+    "seed": "prisma db seed --schema prisma/schemas",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "clean": "turbo run clean && find . -name node_modules -type d -prune -exec rm -rf {} +"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.1.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.4.2",
+    "prisma": "^6.1.0",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
 }
