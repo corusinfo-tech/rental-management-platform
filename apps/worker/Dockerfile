@@ -6,7 +6,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm prisma generate --schema prisma/schemas
 RUN pnpm --filter @noagent4u/worker build
-RUN pnpm deploy --filter @noagent4u/worker --prod /opt/noagent4u-worker
+RUN pnpm --filter @noagent4u/worker --prod deploy --legacy /opt/noagent4u-worker
 
 FROM node:22-alpine
 WORKDIR /app
