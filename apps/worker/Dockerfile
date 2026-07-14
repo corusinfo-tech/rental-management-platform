@@ -8,6 +8,13 @@ RUN pnpm prisma generate --schema prisma/schemas
 RUN pnpm --filter @noagent4u/worker build
 RUN pnpm --filter @noagent4u/worker --prod deploy --legacy /opt/noagent4u-worker
 
+RUN SOURCE_CLIENT="$(readlink -f /app/node_modules/@prisma/client)" && \
+    SOURCE_NODE_MODULES="$(dirname "$(dirname "$SOURCE_CLIENT")")" && \
+    DEST_CLIENT="$(readlink -f /opt/noagent4u-worker/node_modules/@prisma/client)" && \
+    DEST_NODE_MODULES="$(dirname "$(dirname "$DEST_CLIENT")")" && \
+    rm -rf "$DEST_NODE_MODULES/.prisma" && \
+    cp -a "$SOURCE_NODE_MODULES/.prisma" "$DEST_NODE_MODULES/.prisma"
+
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
