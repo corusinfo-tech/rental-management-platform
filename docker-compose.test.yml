@@ -1,0 +1,120 @@
+# Disposable verification stack. Use only with test ports, credentials, and
+# volumes; never merge this file with production compose configuration.
+name: noagent4u-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: noagent4u_test
+      POSTGRES_USER: noagent4u_test
+      POSTGRES_PASSWORD: noagent4u_test_password
+    ports:
+      - "${TEST_POSTGRES_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noagent4u_test -d noagent4u_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [test]
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save '' --appendonly no
+    ports:
+      - "${TEST_REDIS_PORT:-56379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    networks: [test]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${TEST_MAILPIT_SMTP_PORT:-11025}:1025"
+      - "${TEST_MAILPIT_UI_PORT:-18025}:8025"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8025/livez || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks: [test]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: noagent4u_test
+      MINIO_ROOT_PASSWORD: noagent4u_test_minio_password
+    ports:
+      - "${TEST_MINIO_API_PORT:-19000}:9000"
+      - "${TEST_MINIO_CONSOLE_PORT:-19001}:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks: [test]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: test
+      PORT: "3001"
+      DATABASE_URL: postgresql://noagent4u_test:noagent4u_test_password@postgres:5432/noagent4u_test
+      REDIS_URL: redis://redis:6379/15
+      JWT_ACCESS_SECRET: test-access-secret-must-never-be-used-outside-disposable-compose
+      JWT_REFRESH_SECRET: test-refresh-secret-must-never-be-used-outside-disposable-compose
+      JWT_ISSUER: noagent4u-test-api
+      JWT_AUDIENCE: noagent4u-test-web
+      JWT_ALGORITHM: HS256
+      REGISTRATION_THROTTLE_HASH_SECRET: test-registration-throttle-secret-must-never-be-used-outside-disposable-compose
+      VERIFICATION_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      VERIFICATION_KEY_VERSION: test-v1
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "${TEST_API_PORT:-13001}:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    networks: [test]
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://noagent4u_test:noagent4u_test_password@postgres:5432/noagent4u_test
+      REDIS_URL: redis://redis:6379/15
+      WORKER_HEALTH_PORT: "3011"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "${TEST_WORKER_HEALTH_PORT:-13011}:3011"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3011/health/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    networks: [test]
+
+networks:
+  test:
+    name: noagent4u-test-network

@@ -1,0 +1,3 @@
+import { Injectable } from '@nestjs/common'; import { PrismaService } from '../common/prisma.service'; import { InvoiceService } from './invoices.service';
+/** Called by a cron/queue orchestrator; eligibility is rechecked in InvoiceService to prevent stale scheduled jobs issuing invalid invoices. */
+@Injectable() export class InvoiceScheduler { constructor(private prisma: PrismaService, private invoices: InvoiceService) {} async run(dueDate = new Date()) { const agreements = await this.prisma.rentalAgreement.findMany({ where: { autoInvoiceEnabled: true, status: 'ACTIVE', vacatedAt: null, cancelledAt: null }, select: { id: true, tenantId: true } }); return Promise.allSettled(agreements.map(a => this.invoices.generateScheduled(a.tenantId, a.id, dueDate))); } }

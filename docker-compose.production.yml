@@ -1,11 +1,13 @@
 # Production profile: Virtualmin's Apache/Nginx vhost proxies to 127.0.0.1 only.
+# Run Prisma migration as a separately logged release step before starting this
+# stack. Do not run destructive reset commands in this profile.
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-rentalos}
-      POSTGRES_USER: ${POSTGRES_USER:-rentalos}
+      POSTGRES_DB: ${POSTGRES_DB:-noagent4u}
+      POSTGRES_USER: ${POSTGRES_USER:-noagent4u}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
@@ -31,10 +33,30 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     ports: ["127.0.0.1:3001:3001"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  worker:
+    build: { context: ., dockerfile: apps/worker/Dockerfile }
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3011/health/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile }
     restart: unless-stopped
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
     ports: ["127.0.0.1:3000:3000"]
 volumes:
   postgres_data:

@@ -24,7 +24,7 @@ Edit `.env.production`. Generate unique secrets with `openssl rand -base64 48`; 
 Before the first production deployment, create and review an initial Prisma migration in development or CI:
 
 ```bash
-pnpm --filter @rentalos/api prisma:migrate --name init
+pnpm --filter @noagent4u/api prisma:migrate --name init
 git add apps/api/prisma/migrations
 git commit -m "add initial database migration"
 ```

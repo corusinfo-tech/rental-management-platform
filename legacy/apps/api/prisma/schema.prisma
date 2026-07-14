@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  LANDLORD
+  TENANT
+  AGENT
+}
+
+enum AgreementStatus {
+  DRAFT
+  ACTIVE
+  VACATED
+  CANCELLED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+  OVERDUE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model Tenant {
+  id         String             @id @default(uuid())
+  name       String
+  createdAt  DateTime           @default(now())
+  users      User[]
+  properties Property[]
+  agreements RentalAgreement[]
+  invoices   Invoice[]
+
+  @@map("tenants")
+}
+
+model User {
+  id               String   @id @default(uuid())
+  tenantId         String
+  email            String
+  passwordHash     String
+  firstName        String
+  lastName         String
+  role             Role
+  refreshTokenHash String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+model Property {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  address   Json
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  units     Unit[]
+
+  @@index([tenantId])
+  @@map("properties")
+}
+
+model Unit {
+  id         String            @id @default(uuid())
+  tenantId   String
+  propertyId String
+  code       String
+  status     String            @default("VACANT")
+  property   Property          @relation(fields: [propertyId], references: [id])
+  agreements RentalAgreement[]
+
+  @@unique([propertyId, code])
+  @@index([tenantId])
+  @@map("units")
+}
+
+model RentalAgreement {
+  id                 String          @id @default(uuid())
+  tenantId           String
+  unitId             String
+  landlordId         String
+  tenantUserId       String?
+  status             AgreementStatus @default(DRAFT)
+  rentAmount         Decimal         @db.Decimal(12, 2)
+  gstRate            Decimal         @db.Decimal(5, 2)
+  startsOn           DateTime
+  endsOn             DateTime
+  autoInvoiceEnabled Boolean         @default(false)
+  vacatedAt          DateTime?
+  cancelledAt        DateTime?
+  unit               Unit            @relation(fields: [unitId], references: [id])
+  tenant             Tenant          @relation(fields: [tenantId], references: [id])
+  invoices           Invoice[]
+
+  @@index([tenantId, status])
+  @@index([autoInvoiceEnabled, status])
+  @@map("rental_agreements")
+}
+
+model GstProfile {
+  id        String  @id @default(uuid())
+  tenantId  String
+  legalName String
+  gstin     String
+  stateCode String
+  address   Json
+  isDefault Boolean @default(false)
+
+  @@unique([tenantId, gstin])
+  @@map("gst_profiles")
+}
+
+model InvoiceTemplate {
+  id        String  @id @default(uuid())
+  tenantId  String
+  name      String
+  content   Json
+  isDefault Boolean @default(false)
+
+  @@unique([tenantId, name])
+  @@map("invoice_templates")
+}
+
+model Invoice {
+  id                 String        @id @default(uuid())
+  tenantId           String
+  agreementId        String
+  number             String
+  status             InvoiceStatus @default(DRAFT)
+  issueDate          DateTime
+  dueDate            DateTime
+  billingPeriodStart DateTime
+  subtotal           Decimal       @db.Decimal(12, 2)
+  gstAmount          Decimal       @db.Decimal(12, 2)
+  total              Decimal       @db.Decimal(12, 2)
+  snapshot           Json
+  createdAt          DateTime      @default(now())
+  tenant             Tenant        @relation(fields: [tenantId], references: [id])
+  agreement          RentalAgreement @relation(fields: [agreementId], references: [id])
+  payments           Payment[]
+
+  @@unique([tenantId, number])
+  @@unique([agreementId, billingPeriodStart])
+  @@index([tenantId, status, dueDate])
+  @@map("invoices")
+}
+
+model Payment {
+  id         String        @id @default(uuid())
+  tenantId   String
+  invoiceId  String
+  amount     Decimal       @db.Decimal(12, 2)
+  status     PaymentStatus @default(PENDING)
+  provider   String
+  reference  String?
+  receivedAt DateTime?
+  invoice    Invoice       @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("payments")
+}
+
+model MaintenanceRequest {
+  id          String   @id @default(uuid())
+  tenantId    String
+  unitId      String
+  raisedBy    String
+  title       String
+  description String
+  status      String   @default("OPEN")
+  priority    String   @default("NORMAL")
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, status])
+  @@map("maintenance_requests")
+}
+
+model Document {
+  id        String   @id @default(uuid())
+  tenantId  String
+  ownerType String
+  ownerId   String
+  storageKey String
+  fileName  String
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, ownerType, ownerId])
+  @@map("documents")
+}
+
+model Notification {
+  id       String   @id @default(uuid())
+  tenantId String
+  userId   String
+  channel  String
+  template String
+  payload  Json
+  status   String   @default("PENDING")
+  sentAt   DateTime?
+
+  @@index([tenantId, status])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String?
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  traceId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, entityType, entityId])
+  @@map("audit_logs")
+}
