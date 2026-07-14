@@ -8,12 +8,23 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 export class RouteOrganizationContextGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<IdentityRequest>();
-    const organizationId = request.params?.id;
-    if (!organizationId || !UUID_PATTERN.test(organizationId)) throw new BadRequestException('Organization route parameter must be a UUID');
+    const rawOrganizationId = request.params?.id;
+    if (Array.isArray(rawOrganizationId) && rawOrganizationId.length !== 1) {
+      throw new BadRequestException('Organization route parameter must be supplied once');
+    }
+    const organizationId = Array.isArray(rawOrganizationId)
+      ? rawOrganizationId[0]
+      : rawOrganizationId;
+    if (!organizationId || !UUID_PATTERN.test(organizationId))
+      throw new BadRequestException('Organization route parameter must be a UUID');
     const rawHeader = request.headers['x-organization-id'];
-    if (Array.isArray(rawHeader) && rawHeader.length !== 1) throw new BadRequestException('x-organization-id must be supplied once');
+    if (Array.isArray(rawHeader) && rawHeader.length !== 1)
+      throw new BadRequestException('x-organization-id must be supplied once');
     const supplied = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-    if (supplied && supplied !== organizationId) throw new BadRequestException('x-organization-id does not match the organization route parameter');
+    if (supplied && supplied !== organizationId)
+      throw new BadRequestException(
+        'x-organization-id does not match the organization route parameter',
+      );
     request.organizationId = organizationId;
     return true;
   }
