@@ -1,2 +1,5 @@
-const cards = [['Active agreements','—'],['Outstanding rent','—'],['Open maintenance','—'],['Invoices due','—']];
-export default function Dashboard() { return <main className="mx-auto max-w-6xl p-8"><header className="mb-12 flex items-center justify-between"><div><p className="text-sm font-medium text-emerald-400">RENTALOS</p><h1 className="text-3xl font-semibold">Operations dashboard</h1></div><button className="rounded-lg bg-emerald-400 px-4 py-2 font-medium text-slate-950">Generate invoice</button></header><section className="grid gap-4 md:grid-cols-4">{cards.map(([label,value]) => <article key={label} className="rounded-xl border border-slate-800 bg-slate-900 p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-3xl font-semibold">{value}</p></article>)}</section><section className="mt-8 rounded-xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-lg font-medium">Manual invoicing is on by default</h2><p className="mt-2 text-slate-400">Issue GST-compliant invoices explicitly, or enable verified automatic invoicing for an active agreement.</p></section></main>; }
+import { redirect } from 'next/navigation';
+
+export default function HomePage(): never {
+  redirect('/login');
+}
