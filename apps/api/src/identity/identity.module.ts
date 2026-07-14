@@ -57,6 +57,16 @@ import { IdentityService } from './services/identity.service';
     PermissionGuard,
     PolicyGuard,
   ],
-  exports: [IdentityRepository, VerificationEngine, AccessTokenGuard, OrganizationResolver, RouteOrganizationContextGuard, CurrentMembershipResolver, PermissionGuard, PolicyGuard],
+  exports: [
+    JwtModule,
+    IdentityRepository,
+    VerificationEngine,
+    AccessTokenGuard,
+    OrganizationResolver,
+    RouteOrganizationContextGuard,
+    CurrentMembershipResolver,
+    PermissionGuard,
+    PolicyGuard,
+  ],
 })
 export class IdentityModule {}
