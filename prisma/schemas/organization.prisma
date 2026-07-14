@@ -1,0 +1,138 @@
+// This persistence anchor exists so Identity memberships and private roles are
+// referentially safe. Organization workflows remain outside the Identity scope.
+enum OrganizationStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum OrganizationType {
+  LANDLORD
+  PROPERTY_MANAGER
+  ENTERPRISE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  REVOKED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ComplianceStatus {
+  COMPLIANT
+  NON_COMPLIANT
+  UNDER_REVIEW
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Organization {
+  id           String                   @id @default(uuid())
+  code         String                   @unique
+  name         String
+  legalName    String?
+  organizationType OrganizationType     @default(LANDLORD)
+  registrationNumber String?
+  gstNumber    String?
+  panNumber    String?
+  email        String?
+  mobile       String?
+  website      String?
+  status       OrganizationStatus       @default(PENDING)
+  timezone     String                   @default("UTC")
+  currency     String                   @default("INR")
+  country      String                   @default("IN")
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  deletedAt    DateTime?
+  memberships  OrganizationMembership[]
+  privateRoles Role[]                   @relation("OrganizationRoles")
+  outboxEvents OutboxEvent[]
+  auditEvents  IdentityAuditEvent[]
+  sessions     Session[]
+  invitations  OrganizationInvitation[]
+  settings     OrganizationSettings?
+  approval     OrganizationApproval?
+  compliance   OrganizationCompliance?
+
+  @@index([deletedAt])
+  @@index([status, deletedAt])
+  @@index([email])
+}
+
+model OrganizationCompliance {
+  id                    String           @id @default(uuid())
+  organizationId        String           @unique
+  complianceStatus      ComplianceStatus @default(UNDER_REVIEW)
+  kycStatus             String           @default("PENDING")
+  gstVerificationStatus String           @default("PENDING")
+  lastReviewAt          DateTime?
+  nextReviewAt          DateTime?
+  riskLevel             RiskLevel        @default(LOW)
+  notes                 String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  version               Int              @default(1)
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([complianceStatus, nextReviewAt])
+  @@index([riskLevel, updatedAt])
+}
+
+model OrganizationApproval {
+  id             String         @id @default(uuid())
+  organizationId String         @unique
+  status         ApprovalStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedAt     DateTime?
+  reason         String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  version        Int            @default(1)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  reviewedBy     User?          @relation("OrganizationApprovalReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([reviewedByUserId, reviewedAt])
+}
+
+model OrganizationSettings {
+  id                String       @id @default(uuid())
+  organizationId    String       @unique
+  timezone          String       @default("UTC")
+  currency          String       @default("INR")
+  dateFormat        String       @default("DD/MM/YYYY")
+  timeFormat        String       @default("24H")
+  language          String       @default("en")
+  country           String       @default("IN")
+  gstEnabled        Boolean      @default(false)
+  gstNumber         String?
+  invoicePrefix     String       @default("INV")
+  invoiceSequence   Int          @default(1)
+  brandName         String?
+  logoUrl           String?
+  primaryColor      String?
+  secondaryColor    String?
+  notificationEmail String?
+  supportEmail      String?
+  maintenanceEmail  String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  version           Int          @default(1)
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([country])
+}

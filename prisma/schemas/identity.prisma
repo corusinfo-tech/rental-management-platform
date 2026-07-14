@@ -1,0 +1,329 @@
+enum UserStatus {
+  REGISTERED
+  PENDING_EMAIL
+  PENDING_REVIEW
+  ACTIVE
+  LOCKED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum VerificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum VerificationPurpose {
+  EMAIL_VERIFICATION
+  SMS_OTP
+  WHATSAPP_OTP
+  MOBILE_VERIFICATION
+  PASSWORD_RESET
+  MAGIC_LOGIN
+  INVITATION
+  MFA
+}
+
+enum VerificationSubjectType {
+  USER
+  INVITATION
+  EMAIL
+  PHONE
+  PASSWORD_RESET
+  MAGIC_LINK
+}
+
+enum VerificationStatus {
+  PENDING
+  DELIVERED
+  VERIFIED
+  CONSUMED
+  EXPIRED
+  REVOKED
+  FAILED
+  ATTEMPTS_EXCEEDED
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  DEAD_LETTER
+}
+
+enum VerificationDeliveryEnvelopeStatus {
+  PENDING
+  PROCESSED
+  EXPIRED
+  DESTROYED
+}
+
+model Person {
+  id          String                   @id @default(uuid())
+  firstName   String
+  lastName    String
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  deletedAt   DateTime?
+  user        User?
+  memberships OrganizationMembership[]
+
+  @@index([deletedAt])
+}
+
+model User {
+  id                   String               @id @default(uuid())
+  personId             String               @unique
+  email                String               @unique
+  mobile               String?              @unique
+  passwordHash         String
+  status               UserStatus           @default(REGISTERED)
+  emailVerifiedAt      DateTime?
+  lastLoginAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  deletedAt            DateTime?
+  person               Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  sessions             Session[]
+  verifications        Verification[]
+  auditEventsAsActor   IdentityAuditEvent[] @relation("AuditActor")
+  auditEventsAsSubject IdentityAuditEvent[] @relation("AuditSubject")
+  invitationsSent      OrganizationInvitation[] @relation("InvitationInviter")
+  assignedMembershipRoles MembershipRole[] @relation("MembershipRoleAssigner")
+  organizationApprovalsReviewed OrganizationApproval[] @relation("OrganizationApprovalReviewer")
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Role {
+  id             String           @id @default(uuid())
+  organizationId String?
+  code           String
+  name           String
+  description    String?
+  isSystem       Boolean          @default(false)
+  isDefault      Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  organization   Organization?    @relation("OrganizationRoles", fields: [organizationId], references: [id], onDelete: Restrict)
+  permissions    RolePermission[]
+  memberships    MembershipRole[]
+  invitations    OrganizationInvitation[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, deletedAt])
+}
+
+model Permission {
+  id        String           @id @default(uuid())
+  code      String           @unique
+  name      String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  deletedAt DateTime?
+  roles     RolePermission[]
+
+  @@index([deletedAt])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+}
+
+model OrganizationMembership {
+  id             String           @id @default(uuid())
+  organizationId String
+  personId       String
+  status         MembershipStatus @default(INVITED)
+  isOwner        Boolean          @default(false)
+  joinedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person         Person           @relation(fields: [personId], references: [id], onDelete: Restrict)
+  roles          MembershipRole[]
+  sessions       Session[]
+
+  @@unique([organizationId, personId])
+  @@index([organizationId, status])
+  @@index([personId, status])
+  @@index([deletedAt])
+}
+
+model MembershipRole {
+  membershipId    String
+  roleId          String
+  assignedByUserId String?
+  assignedAt      DateTime @default(now())
+  membership   OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  role         Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy   User?                  @relation("MembershipRoleAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+
+  @@id([membershipId, roleId])
+  @@index([assignedByUserId])
+}
+
+model Session {
+  id               String                  @id @default(uuid())
+  userId           String
+  membershipId     String?
+  organizationId   String?
+  deviceId         String?
+  refreshTokenHash String
+  familyId         String
+  parentSessionId  String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    String?
+  deviceName       String?
+  userAgent        String?
+  ipAddress        String?                 @db.Inet
+  lastUsedAt       DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  membership       OrganizationMembership? @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  organization     Organization?           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([userId, expiresAt])
+  @@index([familyId, revokedAt, expiresAt])
+  @@index([parentSessionId])
+  @@index([membershipId])
+  @@index([organizationId])
+}
+
+model Verification {
+  id                String                        @id @default(uuid())
+  userId            String?
+  subjectType       VerificationSubjectType @default(USER)
+  subjectReferenceId String
+  channel           VerificationChannel
+  purpose           VerificationPurpose
+  secretHash        String
+  providerRequestId String?
+  expiresAt         DateTime
+  status            VerificationStatus            @default(PENDING)
+  attempts          Int                           @default(0)
+  maxAttempts       Int                           @default(5)
+  resendCount       Int                           @default(0)
+  lastAttemptAt     DateTime?
+  consumedAt        DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  user              User?                         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deliveryEnvelope  VerificationDeliveryEnvelope?
+  invitation        OrganizationInvitation?
+
+  @@index([userId, purpose, status, expiresAt])
+  @@index([subjectType, subjectReferenceId, channel, purpose, status, expiresAt])
+  @@index([providerRequestId])
+}
+
+model OrganizationInvitation {
+  id              String           @id
+  organizationId  String
+  email           String
+  roleId          String
+  invitedByUserId String
+  verificationId  String           @unique
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  declinedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  version         Int              @default(1)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role            Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy       User             @relation("InvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  verification    Verification     @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, expiresAt])
+  @@index([email, status, expiresAt])
+  @@index([roleId])
+  @@index([invitedByUserId, createdAt])
+}
+
+model VerificationDeliveryEnvelope {
+  id                String                             @id @default(uuid())
+  verificationId    String                             @unique
+  ciphertext        Bytes?
+  nonce             Bytes?
+  authenticationTag Bytes?
+  keyVersion        String
+  algorithm         String
+  aad               Bytes?
+  status            VerificationDeliveryEnvelopeStatus @default(PENDING)
+  expiresAt         DateTime
+  createdAt         DateTime                           @default(now())
+  processedAt       DateTime?
+  destroyedAt       DateTime?
+  verification      Verification                       @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([expiresAt])
+  @@index([createdAt])
+}
+
+model IdentityAuditEvent {
+  id            String   @id @default(uuid())
+  actorUserId   String?
+  subjectUserId String?
+  organizationId String?
+  aggregateId   String?
+  action        String
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  actor         User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  subject       User?    @relation("AuditSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, createdAt])
+  @@index([subjectUserId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([aggregateId, createdAt])
+}
+
+model OutboxEvent {
+  id             String            @id @default(uuid())
+  eventType      String
+  aggregateType  String
+  aggregateId    String
+  organizationId String?
+  payload        Json
+  status         OutboxEventStatus @default(PENDING)
+  attempts       Int               @default(0)
+  availableAt    DateTime          @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  lastError      String?
+  createdAt      DateTime          @default(now())
+  processedAt    DateTime?
+  organization   Organization?     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([status, availableAt])
+  @@index([leaseExpiresAt])
+  @@index([aggregateType, aggregateId])
+  @@index([organizationId, createdAt])
+}

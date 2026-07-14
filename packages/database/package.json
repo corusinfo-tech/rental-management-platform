@@ -1,0 +1,24 @@
+{
+  "name": "@noagent4u/database",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "prisma:generate": "prisma generate --schema ../../prisma/schemas",
+    "prisma:validate": "DATABASE_URL=${DATABASE_URL:-postgresql://noagent4u:noagent4u_dev_password@localhost:5432/noagent4u} prisma validate --schema ../../prisma/schemas",
+    "prisma:seed": "prisma db seed --schema ../../prisma/schemas",
+    "lint": "eslint ../../.eslintrc.cjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test ../../tests/identity-database.test.mjs",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0"
+  },
+  "prisma": {
+    "seed": "node ../../prisma/seed/identity.js"
+  },
+  "devDependencies": {
+    "prisma": "^6.1.0"
+  }
+}

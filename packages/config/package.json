@@ -1,0 +1,12 @@
+{
+  "name": "@noagent4u/config",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ../../.eslintrc.cjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist"
+  }
+}

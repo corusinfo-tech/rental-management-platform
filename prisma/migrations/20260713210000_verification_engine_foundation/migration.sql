@@ -1,0 +1,11 @@
+ALTER TYPE "VerificationChannel" ADD VALUE IF NOT EXISTS 'SMS';
+ALTER TYPE "VerificationPurpose" ADD VALUE IF NOT EXISTS 'SMS_OTP';
+ALTER TYPE "VerificationPurpose" ADD VALUE IF NOT EXISTS 'WHATSAPP_OTP';
+ALTER TYPE "VerificationPurpose" ADD VALUE IF NOT EXISTS 'MAGIC_LOGIN';
+ALTER TYPE "VerificationPurpose" ADD VALUE IF NOT EXISTS 'INVITATION';
+ALTER TYPE "VerificationPurpose" ADD VALUE IF NOT EXISTS 'MFA';
+ALTER TYPE "VerificationStatus" ADD VALUE IF NOT EXISTS 'DELIVERED';
+ALTER TYPE "VerificationStatus" ADD VALUE IF NOT EXISTS 'FAILED';
+ALTER TYPE "VerificationStatus" ADD VALUE IF NOT EXISTS 'ATTEMPTS_EXCEEDED';
+ALTER TABLE "Verification" ADD COLUMN IF NOT EXISTS "resendCount" INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS "Verification_channel_purpose_status_expiresAt_idx" ON "Verification"("channel", "purpose", "status", "expiresAt");
