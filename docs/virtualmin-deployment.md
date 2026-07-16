@@ -32,8 +32,8 @@ git commit -m "add initial database migration"
 On the server, every release then applies only committed migrations:
 
 ```bash
-docker compose -f docker-compose.production.yml up -d --build
-docker compose -f docker-compose.production.yml exec api ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.production.yml exec api ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
 ```
 
 Confirm health locally on the VPS: `curl http://127.0.0.1:3001/api/v1/health`.
@@ -48,6 +48,7 @@ For `noagent4u.com`:
 ProxyPreserveHost On
 ProxyPass / http://127.0.0.1:3000/
 ProxyPassReverse / http://127.0.0.1:3000/
+RequestHeader set X-Forwarded-Host "noagent4u.com"
 RequestHeader set X-Forwarded-Proto "https"
 ```
 
@@ -57,10 +58,21 @@ For `api.noagent4u.com`:
 ProxyPreserveHost On
 ProxyPass / http://127.0.0.1:3001/
 ProxyPassReverse / http://127.0.0.1:3001/
+RequestHeader set X-Forwarded-Host "api.noagent4u.com"
 RequestHeader set X-Forwarded-Proto "https"
 ```
 
-Apply the configuration and reload Apache from Virtualmin/Webmin. Use the equivalent proxy-pass settings if the VPS has been configured with Nginx instead of Apache.
+`ProxyPreserveHost On` preserves the public `Host` header. The explicit
+`X-Forwarded-Host` and `X-Forwarded-Proto` values must be overwritten by the
+trusted proxy rather than accepted from the public request. Apply the
+configuration and reload Apache from Virtualmin/Webmin. For Nginx, use the
+equivalent trusted headers:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
 
 ## 4. Operational checks and releases
 
@@ -71,9 +83,9 @@ Deploy a release with:
 ```bash
 cd /opt/rentalos
 git pull --ff-only
-docker compose -f docker-compose.production.yml up -d --build
-docker compose -f docker-compose.production.yml exec api ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.production.yml exec api ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
 docker image prune -f
 ```
 
-Back up the `postgres_data` volume daily (use a `pg_dump` job, not filesystem copying while PostgreSQL runs), persist off-server backups, and regularly test restoration. Monitor `docker compose -f docker-compose.production.yml logs -f api` and configure a remote log sink before production go-live.
+Back up the `postgres_data` volume daily (use a `pg_dump` job, not filesystem copying while PostgreSQL runs), persist off-server backups, and regularly test restoration. Monitor `docker compose --env-file .env.production -f docker-compose.production.yml logs -f api` and configure a remote log sink before production go-live.
