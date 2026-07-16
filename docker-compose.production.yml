@@ -55,6 +55,8 @@ services:
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile }
     restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:3001
     depends_on:
       api: { condition: service_healthy }
     ports: ["127.0.0.1:3000:3000"]

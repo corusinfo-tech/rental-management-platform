@@ -8,7 +8,7 @@ const verificationId = '22222222-2222-4222-8222-222222222222';
 test('an owner invitation uses the shared generic verification subject and creates ID-only outbox records', async () => {
   const calls = [];
   const repository = {
-    transaction: async (callback) => callback({}), ownerMembership: async () => ({ id: 'owner-membership' }),
+    transaction: async (callback) => callback({}), ownerMembership: async () => ({ id: 'owner-membership' }), organizationIsActive: async () => true,
     findInvitableRole: async () => ({ id: 'role-1' }), expirePending: async () => ({ count: 0 }), findPending: async () => null,
     create: async (input) => ({ ...input, status: 'PENDING', acceptedAt: null, declinedAt: null, revokedAt: null, createdAt: new Date(), updatedAt: new Date(), version: 1 }),
     audit: async (...args) => calls.push(['audit', args]), outbox: async (...args) => calls.push(['outbox', args]),
@@ -31,7 +31,7 @@ test('existing-user acceptance creates one active membership and assigns the inv
   const calls = [];
   const invitation = { id: invitationId, organizationId: 'org-1', verificationId, email: 'invitee@example.com', roleId: 'role-1' };
   const repository = {
-    findByVerificationId: async () => ({ ...invitation, version: 1 }), accept: async () => ({ count: 1 }),
+    findByVerificationId: async () => ({ ...invitation, version: 1 }), accept: async () => ({ count: 1 }), organizationIsActive: async () => true,
     findActiveUserByEmail: async () => ({ id: 'user-1', personId: 'person-1' }), findMembership: async () => null,
     createMembership: async () => ({ id: 'membership-1' }), assignRole: async (...args) => calls.push(['role', args]),
     audit: async (...args) => calls.push(['audit', args]), outbox: async (...args) => calls.push(['outbox', args]), expireIfNeeded: async () => ({ count: 0 }),

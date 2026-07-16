@@ -21,7 +21,7 @@ async function createUser(email, mobile = null) {
 }
 
 test('Identity database integration tests require IDENTITY_TEST_DATABASE_URL', { skip: !shouldRun }, () => {
-  assert.ok(!databaseUrl);
+  assert.ok(databaseUrl);
 });
 
 if (shouldRun) {
@@ -73,8 +73,8 @@ if (shouldRun) {
       prisma.user.count(),
       prisma.organization.count(),
     ]);
-    assert.equal(roles, 4);
-    assert.equal(permissions, 6);
+    assert.equal(roles, 11);
+    assert.equal(permissions, 7);
     assert.equal(users, 0);
     assert.equal(organizations, 0);
   });
@@ -99,6 +99,7 @@ if (shouldRun) {
       const verification = await transaction.verification.create({
         data: {
           userId: user.id,
+          subjectReferenceId: user.id,
           channel: 'EMAIL',
           purpose: 'EMAIL_VERIFICATION',
           secretHash: argonHash,
@@ -254,15 +255,13 @@ if (shouldRun) {
     const verification = await prisma.verification.create({
       data: {
         userId: user.id,
+        subjectReferenceId: user.id,
         channel: 'EMAIL',
         purpose: 'EMAIL_VERIFICATION',
         secretHash: argonHash,
-        expiresAt: new Date(Date.now() + 60_000),
+        createdAt: new Date(Date.now() - 60_000),
+        expiresAt: new Date(Date.now() - 1_000),
       },
-    });
-    await prisma.verification.update({
-      where: { id: verification.id },
-      data: { expiresAt: new Date(Date.now() - 1_000) },
     });
     await assert.rejects(() => prisma.verification.update({
       where: { id: verification.id },
@@ -278,6 +277,7 @@ if (shouldRun) {
     await assert.rejects(() => prisma.verification.create({
       data: {
         userId: user.id,
+        subjectReferenceId: user.id,
         channel: 'EMAIL',
         purpose: 'PASSWORD_RESET',
         secretHash: 'plaintext-reset-token',

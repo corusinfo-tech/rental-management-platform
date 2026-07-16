@@ -4,6 +4,8 @@
 
 - `apps/api/Dockerfile`
 - `apps/worker/Dockerfile`
+- `github-upload-noagent4u/apps/api/Dockerfile`
+- `github-upload-noagent4u/apps/worker/Dockerfile`
 
 ## Verification
 

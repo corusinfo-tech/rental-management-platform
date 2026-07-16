@@ -16,8 +16,9 @@ test('authorized settings reads return the explicit settings allow-list', async 
 
 test('brand and invoice settings update creates settings, brand, and invoice audit records plus the required outbox events', async () => {
   const calls = [];
+  let reads = 0;
   const repository = {
-    transaction: async (callback) => callback({}), settingsAccess: async () => ({ id: 'admin-membership' }), findForUpdate: async () => ({ ...base, notificationEmail: 'ops@example.com', brandName: 'NoAgent4U', invoicePrefix: 'NAU', invoiceSequence: 4, version: 2 }),
+    transaction: async (callback) => callback({}), settingsAccess: async () => ({ id: 'admin-membership' }), findForUpdate: async () => reads++ === 0 ? base : ({ ...base, notificationEmail: 'ops@example.com', brandName: 'NoAgent4U', invoicePrefix: 'NAU', invoiceSequence: 4, version: 2 }),
     update: async () => ({ count: 1 }),
     audit: async (...args) => calls.push(['audit', args]), outbox: async (...args) => calls.push(['outbox', args]),
   };

@@ -14,6 +14,4 @@ ALTER TABLE "Organization" ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'INR';
 ALTER TABLE "Organization" ADD COLUMN "country" TEXT NOT NULL DEFAULT 'IN';
 CREATE INDEX "Organization_status_deletedAt_idx" ON "Organization"("status", "deletedAt");
 CREATE INDEX "Organization_email_idx" ON "Organization"("email");
-CREATE UNIQUE INDEX IF NOT EXISTS "OrganizationMembership_one_owner_per_organization"
-ON "OrganizationMembership" ("organizationId")
-WHERE "isOwner" = true;
+CREATE UNIQUE INDEX IF NOT EXISTS "OrganizationMembership_one_owner_per_organization" ON "OrganizationMembership"("organizationId") WHERE "isOwner" = true AND "deletedAt" IS NULL;

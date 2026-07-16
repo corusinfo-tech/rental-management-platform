@@ -82,7 +82,7 @@ export class LoginDto {
   @ApiProperty({ format: 'password' }) @IsString() @MinLength(12) @MaxLength(128) password!: string;
 }
 
-export class TokenPairDto { @ApiProperty() accessToken!: string; @ApiProperty() refreshToken!: string; @ApiProperty() expiresIn!: number; }
+export class TokenPairDto { @ApiProperty() sessionId!: string; @ApiProperty() accessToken!: string; @ApiProperty() refreshToken!: string; @ApiProperty() expiresIn!: number; }
 export class SessionDto { @ApiProperty() id!: string; @ApiProperty() deviceId?: string; @ApiProperty() userAgent?: string; @ApiProperty() ipAddress?: string; @ApiProperty() lastUsedAt?: Date; @ApiProperty() expiresAt!: Date; }
 export class PasswordResetRequestDto { @ApiProperty({ example: 'ada@example.com', description: 'Email or E.164 mobile number.' }) @IsString() @IsNotEmpty() @MaxLength(320) identifier!: string; }
 export class PasswordResetConfirmDto { @ApiProperty({ description: 'Opaque password-reset verification token.' }) @IsString() @MinLength(20) @MaxLength(512) token!: string; @ApiProperty({ format: 'password', minLength: 12 }) @IsString() @MinLength(12) @MaxLength(128) newPassword!: string; }

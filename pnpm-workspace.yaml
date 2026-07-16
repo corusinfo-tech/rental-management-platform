@@ -21,6 +21,3 @@ allowBuilds:
   "sharp": true
   "unrs-resolver": false
   argon2: true
-
-onlyBuiltDependencies:
-  - argon2

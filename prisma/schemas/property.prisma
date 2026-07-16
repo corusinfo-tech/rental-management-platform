@@ -1,1 +1,211 @@
-// Property domain models will be introduced in a later milestone.
+enum PropertyStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PropertyType {
+  RESIDENTIAL
+  COMMERCIAL
+  MIXED_USE
+  LAND
+}
+
+enum UnitStatus {
+  ACTIVE
+  BLOCKED
+  INACTIVE
+  MAINTENANCE
+  ARCHIVED
+}
+
+enum OccupancyStatus {
+  VACANT
+  OCCUPIED
+  RESERVED
+}
+
+enum PropertyDocumentType {
+  TITLE_DEED
+  LEASE_DOCUMENT
+  TAX_DOCUMENT
+  INSURANCE
+  FLOOR_PLAN
+  OTHER
+}
+
+model Property {
+  id             String              @id @default(uuid())
+  organizationId String
+  ownerUserId    String
+  code           String
+  name           String
+  description    String?
+  propertyType   PropertyType
+  status         PropertyStatus      @default(DRAFT)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  owner          User                @relation("PropertyOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  address        PropertyAddress?
+  buildings      Building[]
+  amenities      PropertyAmenity[]
+  documents      PropertyDocument[]
+  images         PropertyImage[]
+  ownerships     PropertyOwnership[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status, deletedAt])
+  @@index([organizationId, name])
+  @@index([ownerUserId, deletedAt])
+}
+
+model PropertyAddress {
+  id         String   @id @default(uuid())
+  propertyId String   @unique
+  line1      String
+  line2      String?
+  locality   String?
+  city       String
+  state      String?
+  postalCode String?
+  country    String
+  latitude   Decimal? @db.Decimal(10, 7)
+  longitude  Decimal? @db.Decimal(10, 7)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  @@index([country, city])
+}
+
+model Building {
+  id         String    @id @default(uuid())
+  propertyId String
+  code       String
+  name       String
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  property   Property  @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  floors     Floor[]
+
+  @@unique([propertyId, code])
+  @@index([propertyId, deletedAt, sortOrder])
+}
+
+model Floor {
+  id         String    @id @default(uuid())
+  buildingId String
+  number     Int
+  name       String?
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  building   Building  @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  units      Unit[]
+
+  @@unique([buildingId, number])
+  @@index([buildingId, deletedAt, sortOrder])
+}
+
+model Unit {
+  id              String          @id @default(uuid())
+  floorId         String
+  code            String
+  name            String?
+  unitType        String?
+  status          UnitStatus      @default(ACTIVE)
+  occupancyStatus OccupancyStatus @default(VACANT)
+  bedrooms        Int?
+  bathrooms       Int?
+  areaSqFt        Decimal?        @db.Decimal(12, 2)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+  floor           Floor           @relation(fields: [floorId], references: [id], onDelete: Restrict)
+  occupancies     UnitOccupancy[]
+  leases          Lease[]
+
+  @@unique([floorId, code])
+  @@index([floorId, status, occupancyStatus, deletedAt])
+}
+
+model UnitOccupancy {
+  id            String          @id @default(uuid())
+  unitId        String
+  status        OccupancyStatus
+  occupantName  String?
+  occupantEmail String?
+  startsAt      DateTime        @default(now())
+  endsAt        DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  unit          Unit            @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@index([unitId, status, startsAt])
+}
+
+model PropertyAmenity {
+  id          String   @id @default(uuid())
+  propertyId  String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, name])
+  @@index([propertyId])
+}
+
+model PropertyDocument {
+  id         String               @id @default(uuid())
+  propertyId String
+  type       PropertyDocumentType @default(OTHER)
+  name       String
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  deletedAt  DateTime?
+  property   Property             @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, storageKey])
+  @@index([propertyId, type, deletedAt])
+}
+
+model PropertyImage {
+  id         String    @id @default(uuid())
+  propertyId String
+  storageKey String
+  altText    String?
+  sortOrder  Int       @default(0)
+  isCover    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  property   Property  @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, storageKey])
+  @@index([propertyId, deletedAt, sortOrder])
+}
+
+model PropertyOwnership {
+  id         String   @id @default(uuid())
+  propertyId String
+  userId     String
+  share      Decimal  @default(100) @db.Decimal(5, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  user       User     @relation("PropertyOwnershipUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, userId])
+  @@index([userId])
+}

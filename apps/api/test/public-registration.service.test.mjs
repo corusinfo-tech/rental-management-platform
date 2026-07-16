@@ -23,6 +23,9 @@ function createRepository() {
       return { id: 'membership-1' };
     },
     assignRoleToMembership: async (input) => calls.push(['role', input]),
+    createOrganizationApproval: async (organizationId) => { calls.push(['approval', organizationId]); return { id: 'approval-1' }; },
+    createOrganizationCompliance: async (organizationId) => calls.push(['compliance', organizationId]),
+    findAcceptedOrganizationInvitations: async () => [],
     createEmailVerification: async (input) => { calls.push(['verification', input]); return { id: '11111111-1111-4111-8111-111111111111' }; },
     createVerificationDeliveryEnvelope: async (input) => calls.push(['envelope', input]),
     createAuditEvent: async (input) => calls.push(['audit', input]),

@@ -40,33 +40,42 @@ enum RiskLevel {
 }
 
 model Organization {
-  id           String                   @id @default(uuid())
-  code         String                   @unique
-  name         String
-  legalName    String?
-  organizationType OrganizationType     @default(LANDLORD)
+  id                 String                       @id @default(uuid())
+  code               String                       @unique
+  name               String
+  legalName          String?
+  organizationType   OrganizationType             @default(LANDLORD)
   registrationNumber String?
-  gstNumber    String?
-  panNumber    String?
-  email        String?
-  mobile       String?
-  website      String?
-  status       OrganizationStatus       @default(PENDING)
-  timezone     String                   @default("UTC")
-  currency     String                   @default("INR")
-  country      String                   @default("IN")
-  createdAt    DateTime                 @default(now())
-  updatedAt    DateTime                 @updatedAt
-  deletedAt    DateTime?
-  memberships  OrganizationMembership[]
-  privateRoles Role[]                   @relation("OrganizationRoles")
-  outboxEvents OutboxEvent[]
-  auditEvents  IdentityAuditEvent[]
-  sessions     Session[]
-  invitations  OrganizationInvitation[]
-  settings     OrganizationSettings?
-  approval     OrganizationApproval?
-  compliance   OrganizationCompliance?
+  gstNumber          String?
+  panNumber          String?
+  email              String?
+  mobile             String?
+  website            String?
+  status             OrganizationStatus           @default(PENDING)
+  timezone           String                       @default("UTC")
+  currency           String                       @default("INR")
+  country            String                       @default("IN")
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  deletedAt          DateTime?
+  memberships        OrganizationMembership[]
+  privateRoles       Role[]                       @relation("OrganizationRoles")
+  outboxEvents       OutboxEvent[]
+  auditEvents        IdentityAuditEvent[]
+  sessions           Session[]
+  invitations        OrganizationInvitation[]
+  settings           OrganizationSettings?
+  approval           OrganizationApproval?
+  compliance         OrganizationCompliance?
+  properties         Property[]
+  leases             Lease[]
+  invoices           Invoice[]
+  creditNotes        CreditNote[]
+  invoiceSequence    OrganizationInvoiceSequence?
+  receiptSequence    OrganizationReceiptSequence?
+  payments           Payment[]
+  receipts           Receipt[]
+  refunds            Refund[]
 
   @@index([deletedAt])
   @@index([status, deletedAt])
@@ -93,17 +102,17 @@ model OrganizationCompliance {
 }
 
 model OrganizationApproval {
-  id             String         @id @default(uuid())
-  organizationId String         @unique
-  status         ApprovalStatus @default(PENDING)
+  id               String         @id @default(uuid())
+  organizationId   String         @unique
+  status           ApprovalStatus @default(PENDING)
   reviewedByUserId String?
-  reviewedAt     DateTime?
-  reason         String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  version        Int            @default(1)
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  reviewedBy     User?          @relation("OrganizationApprovalReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  reviewedAt       DateTime?
+  reason           String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  version          Int            @default(1)
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  reviewedBy       User?          @relation("OrganizationApprovalReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
 
   @@index([status, createdAt])
   @@index([reviewedByUserId, reviewedAt])

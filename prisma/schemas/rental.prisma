@@ -1,1 +1,236 @@
-// Rental domain models will be introduced in a later milestone.
+enum LeaseStatus {
+  DRAFT
+  ACTIVE
+  NOTICE_TERMINATED
+  EXPIRED
+  ARCHIVED
+}
+
+enum LeasePartyRole {
+  TENANT
+  GUARANTOR
+  CO_TENANT
+}
+
+enum LeaseDocumentType {
+  AGREEMENT
+  ADDENDUM
+  IDENTITY_PROOF
+  OTHER
+}
+
+enum BillingCycle {
+  MONTHLY
+  WEEKLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+  CUSTOM
+}
+
+enum ProrationMethod {
+  NONE
+  DAILY
+}
+
+enum LeaseBillingStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum RentScheduleStatus {
+  SCHEDULED
+  DUE
+  OVERDUE
+  CANCELLED
+}
+
+enum RentEscalationType {
+  PERCENTAGE
+  FIXED
+}
+
+enum LateFeeType {
+  FLAT
+  PERCENTAGE
+}
+
+enum SecurityDepositStatus {
+  NOT_REQUIRED
+  PENDING
+  HELD
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+model Lease {
+  id                String                @id @default(uuid())
+  organizationId    String
+  unitId            String
+  code              String
+  status            LeaseStatus           @default(DRAFT)
+  startsAt          DateTime
+  endsAt            DateTime
+  terminatedAt      DateTime?
+  terminationReason String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  deletedAt         DateTime?
+  organization      Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  unit              Unit                  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  terms             LeaseTerms?
+  parties           LeaseParty[]
+  documents         LeaseDocument[]
+  renewals          LeaseRenewal[]
+  billingCalendar   LeaseBillingCalendar?
+  invoices          Invoice[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status, deletedAt])
+  @@index([unitId, status, startsAt, endsAt])
+}
+
+model LeaseBillingCalendar {
+  id                        String                    @id @default(uuid())
+  leaseId                   String                    @unique
+  billingCycle              BillingCycle
+  customIntervalDays        Int?
+  dueDaysAfterPeriodStart   Int                       @default(0)
+  prorationMethod           ProrationMethod           @default(DAILY)
+  status                    LeaseBillingStatus        @default(DRAFT)
+  currency                  String                    @default("INR")
+  schedulesGeneratedThrough DateTime?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  deletedAt                 DateTime?
+  lease                     Lease                     @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+  schedules                 LeaseRentSchedule[]
+  escalationRules           LeaseRentEscalationRule[]
+  lateFeeRule               LeaseLateFeeRule?
+  securityDeposit           LeaseSecurityDeposit?
+
+  @@index([status, deletedAt])
+}
+
+model LeaseRentSchedule {
+  id               String               @id @default(uuid())
+  calendarId       String
+  sequence         Int
+  periodStartsAt   DateTime
+  periodEndsAt     DateTime
+  dueAt            DateTime
+  rentAmount       Decimal              @db.Decimal(14, 2)
+  escalationAmount Decimal              @default(0) @db.Decimal(14, 2)
+  prorationAmount  Decimal              @default(0) @db.Decimal(14, 2)
+  totalDue         Decimal              @db.Decimal(14, 2)
+  status           RentScheduleStatus   @default(SCHEDULED)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  calendar         LeaseBillingCalendar @relation(fields: [calendarId], references: [id], onDelete: Restrict)
+  invoice          Invoice?
+
+  @@unique([calendarId, sequence])
+  @@unique([calendarId, periodStartsAt])
+  @@index([calendarId, status, dueAt])
+}
+
+model LeaseRentEscalationRule {
+  id             String               @id @default(uuid())
+  calendarId     String
+  effectiveAt    DateTime
+  type           RentEscalationType
+  amount         Decimal              @db.Decimal(14, 2)
+  intervalMonths Int?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  calendar       LeaseBillingCalendar @relation(fields: [calendarId], references: [id], onDelete: Restrict)
+
+  @@unique([calendarId, effectiveAt])
+  @@index([calendarId, effectiveAt])
+}
+
+model LeaseLateFeeRule {
+  id              String               @id @default(uuid())
+  calendarId      String               @unique
+  type            LateFeeType
+  amount          Decimal              @db.Decimal(14, 2)
+  gracePeriodDays Int                  @default(0)
+  maximumAmount   Decimal?             @db.Decimal(14, 2)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  calendar        LeaseBillingCalendar @relation(fields: [calendarId], references: [id], onDelete: Restrict)
+}
+
+model LeaseSecurityDeposit {
+  id             String                @id @default(uuid())
+  calendarId     String                @unique
+  requiredAmount Decimal               @default(0) @db.Decimal(14, 2)
+  heldAmount     Decimal               @default(0) @db.Decimal(14, 2)
+  refundedAmount Decimal               @default(0) @db.Decimal(14, 2)
+  status         SecurityDepositStatus @default(NOT_REQUIRED)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  calendar       LeaseBillingCalendar  @relation(fields: [calendarId], references: [id], onDelete: Restrict)
+}
+
+model LeaseTerms {
+  id               String   @id @default(uuid())
+  leaseId          String   @unique
+  rentAmount       Decimal  @db.Decimal(14, 2)
+  securityDeposit  Decimal  @default(0) @db.Decimal(14, 2)
+  escalationRate   Decimal? @db.Decimal(5, 2)
+  escalationMonths Int?
+  gracePeriodDays  Int      @default(0)
+  noticePeriodDays Int      @default(30)
+  lateFeeAmount    Decimal  @default(0) @db.Decimal(14, 2)
+  currency         String   @default("INR")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lease            Lease    @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+}
+
+model LeaseParty {
+  id        String         @id @default(uuid())
+  leaseId   String
+  role      LeasePartyRole
+  name      String
+  email     String?
+  mobile    String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  lease     Lease          @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+
+  @@index([leaseId, role])
+}
+
+model LeaseDocument {
+  id         String            @id @default(uuid())
+  leaseId    String
+  type       LeaseDocumentType @default(OTHER)
+  name       String
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  deletedAt  DateTime?
+  lease      Lease             @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+
+  @@unique([leaseId, storageKey])
+  @@index([leaseId, type, deletedAt])
+}
+
+model LeaseRenewal {
+  id             String   @id @default(uuid())
+  leaseId        String
+  previousEndsAt DateTime
+  renewedEndsAt  DateTime
+  rentAmount     Decimal? @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+  lease          Lease    @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+
+  @@index([leaseId, renewedEndsAt])
+}

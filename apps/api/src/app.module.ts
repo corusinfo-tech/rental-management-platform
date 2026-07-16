@@ -8,6 +8,9 @@ import { CorrelationIdMiddleware } from './core/request/correlation-id.middlewar
 import { RequestIdMiddleware } from './core/request/request-id.middleware';
 import { IdentityModule } from './identity/identity.module';
 import { OrganizationModule } from './organization/organization.module';
+import { PropertyModule } from './property/property.module';
+import { RentalModule } from './rental/rental.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { OrganizationModule } from './organization/organization.module';
     HealthModule,
     IdentityModule,
     OrganizationModule,
+    PropertyModule,
+    RentalModule,
+    FinanceModule,
   ],
   providers: [RequestIdMiddleware, CorrelationIdMiddleware],
 })

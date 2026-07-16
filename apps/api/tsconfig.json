@@ -15,6 +15,9 @@
     "src/core/**/*.ts",
     "src/identity/**/*.ts",
     "src/organization/**/*.ts",
+    "src/property/**/*.ts",
+    "src/rental/**/*.ts",
+    "src/finance/**/*.ts",
     "src/health/**/*.ts"
   ]
 }

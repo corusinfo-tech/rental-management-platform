@@ -1,1 +1,223 @@
-// Finance domain models will be introduced in a later milestone.
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+  ARCHIVED
+}
+
+enum InvoiceLineType {
+  RENT
+  SECURITY_DEPOSIT
+  MAINTENANCE
+  UTILITY
+  PARKING
+  MISCELLANEOUS
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  VOID
+  ARCHIVED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+  CREDIT_CARD
+  DEBIT_CARD
+  ONLINE_PAYMENT_GATEWAY
+}
+
+enum PaymentPurpose {
+  INVOICE
+  ADVANCE
+  SECURITY_DEPOSIT
+}
+
+enum PaymentStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+model OrganizationInvoiceSequence {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  prefix         String       @default("INV")
+  nextValue      Int          @default(1)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+}
+
+model OrganizationReceiptSequence {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  prefix         String       @default("RCT")
+  nextValue      Int          @default(1)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+}
+
+model Invoice {
+  id                  String              @id @default(uuid())
+  organizationId      String
+  leaseId             String
+  rentScheduleId      String              @unique
+  invoiceNumber       String
+  status              InvoiceStatus       @default(DRAFT)
+  archivedFromStatus  InvoiceStatus?
+  issuedAt            DateTime?
+  dueAt               DateTime
+  currency            String              @default("INR")
+  subtotal            Decimal             @db.Decimal(14, 2)
+  creditTotal         Decimal             @default(0) @db.Decimal(14, 2)
+  total               Decimal             @db.Decimal(14, 2)
+  outstandingBalance  Decimal             @db.Decimal(14, 2)
+  nextCreditNoteValue Int                 @default(1)
+  notes               String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  deletedAt           DateTime?
+  organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  lease               Lease               @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+  rentSchedule        LeaseRentSchedule   @relation(fields: [rentScheduleId], references: [id], onDelete: Restrict)
+  lines               InvoiceLine[]
+  creditNotes         CreditNote[]
+  paymentAllocations  PaymentAllocation[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId, status, dueAt, deletedAt])
+  @@index([organizationId, createdAt])
+  @@index([leaseId, dueAt])
+}
+
+model Payment {
+  id                   String              @id @default(uuid())
+  organizationId       String
+  paymentNumber        String
+  method               PaymentMethod
+  purpose              PaymentPurpose      @default(INVOICE)
+  status               PaymentStatus       @default(COMPLETED)
+  currency             String
+  amount               Decimal             @db.Decimal(14, 2)
+  allocatedAmount      Decimal             @db.Decimal(14, 2)
+  unappliedAmount      Decimal             @db.Decimal(14, 2)
+  refundedAmount       Decimal             @default(0) @db.Decimal(14, 2)
+  refundReservedAmount Decimal             @default(0) @db.Decimal(14, 2)
+  externalReference    String?
+  notes                String?
+  paidAt               DateTime
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  allocations          PaymentAllocation[]
+  receipt              Receipt?
+  refunds              Refund[]
+
+  @@unique([organizationId, paymentNumber])
+  @@unique([organizationId, method, externalReference])
+  @@index([organizationId, status, paidAt])
+  @@index([organizationId, method, purpose])
+  @@index([externalReference])
+}
+
+model PaymentAllocation {
+  id        String   @id @default(uuid())
+  paymentId String
+  invoiceId String
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId, createdAt])
+}
+
+model Receipt {
+  id             String       @id @default(uuid())
+  organizationId String
+  paymentId      String       @unique
+  receiptNumber  String
+  amount         Decimal      @db.Decimal(14, 2)
+  currency       String
+  issuedAt       DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment        Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, receiptNumber])
+  @@index([organizationId, issuedAt])
+}
+
+model Refund {
+  id                String       @id @default(uuid())
+  organizationId    String
+  paymentId         String
+  status            RefundStatus @default(PENDING)
+  amount            Decimal      @db.Decimal(14, 2)
+  reason            String
+  externalReference String?
+  requestedAt       DateTime     @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment           Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId, status, requestedAt])
+  @@index([organizationId, status, requestedAt])
+}
+
+model InvoiceLine {
+  id          String          @id @default(uuid())
+  invoiceId   String
+  type        InvoiceLineType
+  description String
+  quantity    Decimal         @default(1) @db.Decimal(12, 3)
+  unitAmount  Decimal         @db.Decimal(14, 2)
+  lineTotal   Decimal         @db.Decimal(14, 2)
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  invoice     Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId, sortOrder])
+  @@index([type])
+}
+
+model CreditNote {
+  id               String           @id @default(uuid())
+  organizationId   String
+  invoiceId        String
+  creditNoteNumber String
+  status           CreditNoteStatus @default(DRAFT)
+  amount           Decimal          @db.Decimal(14, 2)
+  reason           String
+  issuedAt         DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice          Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, creditNoteNumber])
+  @@index([invoiceId, status, deletedAt])
+  @@index([organizationId, createdAt])
+}

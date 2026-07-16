@@ -81,42 +81,44 @@ model Person {
 }
 
 model User {
-  id                   String               @id @default(uuid())
-  personId             String               @unique
-  email                String               @unique
-  mobile               String?              @unique
-  passwordHash         String
-  status               UserStatus           @default(REGISTERED)
-  emailVerifiedAt      DateTime?
-  lastLoginAt          DateTime?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  deletedAt            DateTime?
-  person               Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
-  sessions             Session[]
-  verifications        Verification[]
-  auditEventsAsActor   IdentityAuditEvent[] @relation("AuditActor")
-  auditEventsAsSubject IdentityAuditEvent[] @relation("AuditSubject")
-  invitationsSent      OrganizationInvitation[] @relation("InvitationInviter")
-  assignedMembershipRoles MembershipRole[] @relation("MembershipRoleAssigner")
-  organizationApprovalsReviewed OrganizationApproval[] @relation("OrganizationApprovalReviewer")
+  id                            String                   @id @default(uuid())
+  personId                      String                   @unique
+  email                         String                   @unique
+  mobile                        String?                  @unique
+  passwordHash                  String
+  status                        UserStatus               @default(REGISTERED)
+  emailVerifiedAt               DateTime?
+  lastLoginAt                   DateTime?
+  createdAt                     DateTime                 @default(now())
+  updatedAt                     DateTime                 @updatedAt
+  deletedAt                     DateTime?
+  person                        Person                   @relation(fields: [personId], references: [id], onDelete: Restrict)
+  sessions                      Session[]
+  verifications                 Verification[]
+  auditEventsAsActor            IdentityAuditEvent[]     @relation("AuditActor")
+  auditEventsAsSubject          IdentityAuditEvent[]     @relation("AuditSubject")
+  invitationsSent               OrganizationInvitation[] @relation("InvitationInviter")
+  assignedMembershipRoles       MembershipRole[]         @relation("MembershipRoleAssigner")
+  organizationApprovalsReviewed OrganizationApproval[]   @relation("OrganizationApprovalReviewer")
+  ownedProperties               Property[]               @relation("PropertyOwner")
+  propertyOwnerships            PropertyOwnership[]      @relation("PropertyOwnershipUser")
 
   @@index([status])
   @@index([deletedAt])
 }
 
 model Role {
-  id             String           @id @default(uuid())
+  id             String                   @id @default(uuid())
   organizationId String?
   code           String
   name           String
   description    String?
-  isSystem       Boolean          @default(false)
-  isDefault      Boolean          @default(false)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  isSystem       Boolean                  @default(false)
+  isDefault      Boolean                  @default(false)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
   deletedAt      DateTime?
-  organization   Organization?    @relation("OrganizationRoles", fields: [organizationId], references: [id], onDelete: Restrict)
+  organization   Organization?            @relation("OrganizationRoles", fields: [organizationId], references: [id], onDelete: Restrict)
   permissions    RolePermission[]
   memberships    MembershipRole[]
   invitations    OrganizationInvitation[]
@@ -140,7 +142,7 @@ model Permission {
 model RolePermission {
   roleId       String
   permissionId String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime   @default(now())
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
 
@@ -169,13 +171,13 @@ model OrganizationMembership {
 }
 
 model MembershipRole {
-  membershipId    String
-  roleId          String
+  membershipId     String
+  roleId           String
   assignedByUserId String?
-  assignedAt      DateTime @default(now())
-  membership   OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
-  role         Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  assignedBy   User?                  @relation("MembershipRoleAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  assignedAt       DateTime               @default(now())
+  membership       OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  role             Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy       User?                  @relation("MembershipRoleAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
 
   @@id([membershipId, roleId])
   @@index([assignedByUserId])
@@ -211,27 +213,27 @@ model Session {
 }
 
 model Verification {
-  id                String                        @id @default(uuid())
-  userId            String?
-  subjectType       VerificationSubjectType @default(USER)
+  id                 String                        @id @default(uuid())
+  userId             String?
+  subjectType        VerificationSubjectType       @default(USER)
   subjectReferenceId String
-  channel           VerificationChannel
-  purpose           VerificationPurpose
-  secretHash        String
-  providerRequestId String?
-  expiresAt         DateTime
-  status            VerificationStatus            @default(PENDING)
-  attempts          Int                           @default(0)
-  maxAttempts       Int                           @default(5)
-  resendCount       Int                           @default(0)
-  lastAttemptAt     DateTime?
-  consumedAt        DateTime?
-  revokedAt         DateTime?
-  createdAt         DateTime                      @default(now())
-  updatedAt         DateTime                      @updatedAt
-  user              User?                         @relation(fields: [userId], references: [id], onDelete: Restrict)
-  deliveryEnvelope  VerificationDeliveryEnvelope?
-  invitation        OrganizationInvitation?
+  channel            VerificationChannel
+  purpose            VerificationPurpose
+  secretHash         String
+  providerRequestId  String?
+  expiresAt          DateTime
+  status             VerificationStatus            @default(PENDING)
+  attempts           Int                           @default(0)
+  maxAttempts        Int                           @default(5)
+  resendCount        Int                           @default(0)
+  lastAttemptAt      DateTime?
+  consumedAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+  user               User?                         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deliveryEnvelope   VerificationDeliveryEnvelope?
+  invitation         OrganizationInvitation?
 
   @@index([userId, purpose, status, expiresAt])
   @@index([subjectType, subjectReferenceId, channel, purpose, status, expiresAt])
@@ -286,17 +288,17 @@ model VerificationDeliveryEnvelope {
 }
 
 model IdentityAuditEvent {
-  id            String   @id @default(uuid())
-  actorUserId   String?
-  subjectUserId String?
+  id             String        @id @default(uuid())
+  actorUserId    String?
+  subjectUserId  String?
   organizationId String?
-  aggregateId   String?
-  action        String
-  metadata      Json?
-  createdAt     DateTime @default(now())
-  actor         User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
-  subject       User?    @relation("AuditSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
-  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  aggregateId    String?
+  action         String
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  actor          User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  subject        User?         @relation("AuditSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   @@index([actorUserId, createdAt])
   @@index([subjectUserId, createdAt])

@@ -43,7 +43,7 @@ CREATE TABLE "User" (
     "deletedAt" TIMESTAMP(3),
     CONSTRAINT "User_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "User_email_normalized_check" CHECK ("email" = lower(btrim("email"))),
-    CONSTRAINT "User_mobile_e164_check" CHECK ("mobile" IS NULL OR "mobile" ~ '^\\+[1-9][0-9]{1,14}$'),
+    CONSTRAINT "User_mobile_e164_check" CHECK ("mobile" IS NULL OR "mobile" ~ '^[+][1-9][0-9]{1,14}$'),
     CONSTRAINT "User_password_hash_check" CHECK ("passwordHash" LIKE '$argon2%')
 );
 

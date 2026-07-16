@@ -6,3 +6,6 @@ node_modules
 .env
 .env.*
 legacy
+github-upload-noagent4u
+1.pnpm-store
+.turbo

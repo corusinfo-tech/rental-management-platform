@@ -8,7 +8,7 @@ function createEngine() {
   const calls = [];
   const repository = {
     withTransaction: async (callback) => callback({}),
-    createVerification: async (input) => ({ id: '11111111-1111-4111-8111-111111111111', ...input }),
+    createVerification: async (input) => ({ ...input, id: input.id ?? '11111111-1111-4111-8111-111111111111' }),
     createVerificationDeliveryEnvelope: async (input) => calls.push(['envelope', input]),
     createAuditEvent: async (input) => calls.push(['audit', input]),
     createOutboxEvent: async (input) => calls.push(['outbox', input]),

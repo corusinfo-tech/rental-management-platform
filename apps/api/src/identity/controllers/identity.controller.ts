@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { ApiAcceptedResponse, ApiBadRequestResponse, ApiConflictResponse, ApiOkResponse, ApiOperation, ApiTags, ApiTooManyRequestsResponse } from '@nestjs/swagger';
+import { ApiAcceptedResponse, ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiOkResponse, ApiOperation, ApiTags, ApiTooManyRequestsResponse } from '@nestjs/swagger';
 import type { RequestContext } from '../../core/request/request-context';
 import { EmailVerificationConfirmDto, EmailVerificationRequestDto, ErrorEnvelopeDto, GenericAcceptedDto, GenericSuccessEnvelopeDto, LoginDto, PasswordResetConfirmDto, PasswordResetRequestDto, RefreshDto, RegisterDto, RegistrationAcceptedDto, RegistrationSuccessEnvelopeDto, SessionDto, SmsVerificationConfirmDto, SmsVerificationRequestDto, TokenPairDto, WhatsAppVerificationConfirmDto, WhatsAppVerificationRequestDto } from '../dto/auth.dto';
 import { PublicRegistrationService } from '../registration/public-registration.service';
@@ -66,16 +66,16 @@ export class IdentityController {
   @Post('refresh') @HttpCode(HttpStatus.OK) @ApiOperation({ summary: 'Rotate a refresh token and issue a replacement token pair' }) @ApiOkResponse({ type: TokenPairDto })
   async refresh(@Body() dto: RefreshDto, @Req() request: RequestContext) { await this.authenticationThrottle.enforce('refresh', dto.refreshToken, request); return this.identity.refresh(dto.refreshToken); }
 
-  @Post('logout') @UseGuards(AccessTokenGuard) @HttpCode(HttpStatus.OK) @ApiOperation({ summary: 'Revoke the current session' })
+  @Post('logout') @UseGuards(AccessTokenGuard) @HttpCode(HttpStatus.OK) @ApiBearerAuth('access-token') @ApiOperation({ summary: 'Revoke the current session' })
   async logout(@Req() request: IdentityRequest): Promise<GenericAcceptedDto> { await this.identity.logout(request.identity!.sub, request.identity!.sid); return { accepted: true }; }
 
-  @Post('logout-all') @UseGuards(AccessTokenGuard) @HttpCode(HttpStatus.OK) @ApiOperation({ summary: 'Revoke all sessions for the current user' })
+  @Post('logout-all') @UseGuards(AccessTokenGuard) @HttpCode(HttpStatus.OK) @ApiBearerAuth('access-token') @ApiOperation({ summary: 'Revoke all sessions for the current user' })
   async logoutAll(@Req() request: IdentityRequest): Promise<GenericAcceptedDto> { await this.identity.logoutAll(request.identity!.sub); return { accepted: true }; }
 
-  @Get('sessions') @UseGuards(AccessTokenGuard) @ApiOperation({ summary: 'List active sessions for the current user' }) @ApiOkResponse({ type: SessionDto, isArray: true })
+  @Get('sessions') @UseGuards(AccessTokenGuard) @ApiBearerAuth('access-token') @ApiOperation({ summary: 'List active sessions for the current user' }) @ApiOkResponse({ type: SessionDto, isArray: true })
   sessions(@Req() request: IdentityRequest) { return this.identity.sessions(request.identity!.sub); }
 
-  @Delete('sessions/:sessionId') @UseGuards(AccessTokenGuard) @HttpCode(HttpStatus.OK) @ApiOperation({ summary: 'Revoke one of the current user’s sessions' })
+  @Delete('sessions/:sessionId') @UseGuards(AccessTokenGuard) @HttpCode(HttpStatus.OK) @ApiBearerAuth('access-token') @ApiOperation({ summary: 'Revoke one of the current user’s sessions' })
   async revokeSession(@Param('sessionId') sessionId: string, @Req() request: IdentityRequest): Promise<GenericAcceptedDto> { await this.identity.revokeSession(request.identity!.sub, sessionId); return { accepted: true }; }
 
   @Post('password-reset/request') @HttpCode(HttpStatus.ACCEPTED) @ApiOperation({ summary: 'Request a password reset without revealing account state' }) @ApiAcceptedResponse({ type: GenericSuccessEnvelopeDto })
