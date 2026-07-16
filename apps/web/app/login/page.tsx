@@ -7,13 +7,14 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useAuth } from '@/components/auth/auth-provider';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { AuthShell, FieldError, FormMessage, inputClassName } from '@/components/auth/auth-shell';
+import { PasswordInput } from '@/components/auth/password-input';
 import { Button } from '@/components/ui/button';
 
 const loginSchema = z.object({
   identifier: z.string().trim().min(3, 'Enter your email address or mobile number'),
-  password: z.string().min(12, 'Password must be at least 12 characters'),
-  rememberMe: z.boolean()
+  password: z.string().min(12, 'Password must be at least 12 characters').max(128),
+  rememberMe: z.boolean(),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -22,11 +23,7 @@ export default function LoginPage(): React.ReactElement {
   const { signIn, status } = useAuth();
   const router = useRouter();
   const [message, setMessage] = useState<string>();
-  const [showPassword, setShowPassword] = useState(false);
-  const form = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { identifier: '', password: '', rememberMe: false }
-  });
+  const form = useForm<LoginValues>({ resolver: zodResolver(loginSchema), defaultValues: { identifier: '', password: '', rememberMe: false } });
 
   useEffect(() => {
     if (status === 'authenticated') router.replace('/dashboard');
@@ -43,44 +40,31 @@ export default function LoginPage(): React.ReactElement {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center p-6">
-      <section className="w-full max-w-sm rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">NoAgent4U</p>
-            <h1 className="mt-1 text-2xl font-semibold">Sign in</h1>
-          </div>
-          <ThemeToggle />
+    <AuthShell
+      title="Welcome back"
+      description="Sign in to manage your organizations and rental operations."
+      footer={<>New to NoAgent4U? <Link className="font-medium text-primary hover:underline" href="/register">Create an account</Link></>}
+    >
+      <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <div>
+          <label className="block text-sm font-medium" htmlFor="identifier">Email or mobile number</label>
+          <input className={`${inputClassName} mt-1`} autoComplete="username" id="identifier" inputMode="email" placeholder="you@example.com or +14155550100" {...form.register('identifier')} />
+          <FieldError message={form.formState.errors.identifier?.message} />
         </div>
-        <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-          <label className="block text-sm font-medium" htmlFor="identifier">
-            Email or mobile number
-          </label>
-          <input
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            autoComplete="username"
-            id="identifier"
-            inputMode="email"
-            placeholder="you@example.com or +14155550100"
-            {...form.register('identifier')}
-          />
-          {form.formState.errors.identifier && <p className="text-sm text-red-600">{form.formState.errors.identifier.message}</p>}
-          <div className="flex items-center justify-between gap-3"><label className="block text-sm font-medium" htmlFor="password">Password</label><Link className="text-sm text-primary underline-offset-4 hover:underline" href="/password-reset">Forgot password?</Link></div>
-          <input
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            autoComplete="current-password"
-            id="password"
-            type={showPassword ? 'text' : 'password'}
-            {...form.register('password')}
-          />
-          {form.formState.errors.password && <p className="text-sm text-red-600">{form.formState.errors.password.message}</p>}
-          <div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" {...form.register('rememberMe')} />Remember me</label><button className="text-sm text-primary underline-offset-4 hover:underline" type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide password' : 'Show password'}</button></div>
-          <Button className="w-full" disabled={form.formState.isSubmitting || status === 'loading'} type="submit">
-            {form.formState.isSubmitting ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
-        {message && <p className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300" role="alert">{message}</p>}
-      </section>
-    </main>
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <label className="block text-sm font-medium" htmlFor="password">Password</label>
+            <Link className="text-sm text-primary hover:underline" href="/forgot-password">Forgot password?</Link>
+          </div>
+          <div className="mt-1"><PasswordInput id="password" registration={form.register('password')} /></div>
+          <FieldError message={form.formState.errors.password?.message} />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground"><input className="h-4 w-4 rounded border" type="checkbox" {...form.register('rememberMe')} />Remember me for 30 days</label>
+        <Button className="w-full" disabled={form.formState.isSubmitting || status === 'loading'} type="submit">
+          {form.formState.isSubmitting ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
+      {message && <div className="mt-4"><FormMessage tone="error">{message}</FormMessage></div>}
+    </AuthShell>
   );
 }
