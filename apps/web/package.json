@@ -7,7 +7,7 @@
     "dev": "next dev",
     "lint": "eslint app components lib --max-warnings=0",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc --noEmit -p tsconfig.json && node --test test/*.test.mjs",
     "clean": "rm -rf .next"
   },
   "dependencies": {

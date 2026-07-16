@@ -303,7 +303,24 @@ export class IdentityRepository {
     return this.prisma.session.findFirst({ where: { id, revokedAt: null, expiresAt: { gt: new Date() }, user: { deletedAt: null, status: UserStatus.ACTIVE } }, select: { id: true, userId: true } });
   }
 
-  async listActiveSessions(userId: string) { return this.prisma.session.findMany({ where: { userId, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { lastUsedAt: 'desc' } }); }
+  async listActiveSessions(userId: string) {
+    return this.prisma.session.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { lastUsedAt: 'desc' },
+      select: {
+        id: true,
+        membershipId: true,
+        organizationId: true,
+        deviceId: true,
+        deviceName: true,
+        userAgent: true,
+        ipAddress: true,
+        lastUsedAt: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    });
+  }
   async revokeSessionForUser(sessionId: string, userId: string, reason: string, client: Prisma.TransactionClient | PrismaService = this.prisma) { return client.session.updateMany({ where: { id: sessionId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: reason } }); }
   async revokeAllSessionsForUser(userId: string, reason: string, client: Prisma.TransactionClient | PrismaService = this.prisma) { return client.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: reason } }); }
 

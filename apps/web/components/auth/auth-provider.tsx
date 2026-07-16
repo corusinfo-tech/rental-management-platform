@@ -1,14 +1,17 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AUTH_API_BASE, envelopeMessage, readEnvelope } from '@/lib/auth-client';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 type LoginInput = { identifier: string; password: string; rememberMe: boolean };
 type AuthTokens = { accessToken: string; expiresIn: number; sessionId: string };
-type Envelope<T> = { success: boolean; data?: T; error?: { message?: string | string[] } };
+type SessionSummary = { id: string; membershipId?: string; organizationId?: string };
 
 type AuthContextValue = {
   status: AuthStatus;
+  sessionId?: string;
+  organizationId?: string;
   signIn: (input: LoginInput) => Promise<void>;
   logout: () => Promise<void>;
   authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -16,15 +19,6 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const DEVICE_ID_KEY = 'noagent4u_device_id';
-
-function messageFrom(payload: Envelope<unknown>, fallback: string): string {
-  const message = payload.error?.message;
-  return Array.isArray(message) ? message.join(', ') : message ?? fallback;
-}
-
-async function readEnvelope<T>(response: Response): Promise<Envelope<T>> {
-  try { return await response.json() as Envelope<T>; } catch { return { success: false, error: { message: 'Unexpected response from the authentication service' } }; }
-}
 
 function deviceId(): string {
   const existing = window.localStorage.getItem(DEVICE_ID_KEY);
@@ -37,31 +31,50 @@ function deviceId(): string {
 export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>): React.ReactElement {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
+  const [organizationId, setOrganizationId] = useState<string>();
   const tokensRef = useRef<AuthTokens | null>(null);
   const refreshInFlight = useRef<Promise<boolean> | null>(null);
 
   const clearAuthentication = useCallback(() => {
     tokensRef.current = null;
     setTokens(null);
+    setOrganizationId(undefined);
     setStatus('unauthenticated');
   }, []);
 
-  const setAuthentication = useCallback((nextTokens: AuthTokens) => {
+  const setAuthentication = useCallback(async (nextTokens: AuthTokens) => {
     tokensRef.current = nextTokens;
     setTokens(nextTokens);
+    try {
+      const response = await fetch(`${AUTH_API_BASE}/sessions`, {
+        credentials: 'same-origin',
+        headers: { authorization: `Bearer ${nextTokens.accessToken}` },
+        cache: 'no-store',
+      });
+      const payload = await readEnvelope<SessionSummary[]>(response);
+      const current = payload.data?.find((session) => session.id === nextTokens.sessionId);
+      setOrganizationId(current?.organizationId);
+    } catch {
+      setOrganizationId(undefined);
+    }
     setStatus('authenticated');
   }, []);
 
   const refresh = useCallback(async (): Promise<boolean> => {
     if (refreshInFlight.current) return refreshInFlight.current;
     refreshInFlight.current = (async () => {
-      const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, cache: 'no-store' });
+      const response = await fetch(`${AUTH_API_BASE}/refresh`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        cache: 'no-store',
+      });
       const payload = await readEnvelope<AuthTokens>(response);
       if (!response.ok || !payload.success || !payload.data) {
         clearAuthentication();
         return false;
       }
-      setAuthentication(payload.data);
+      await setAuthentication(payload.data);
       return true;
     })().finally(() => { refreshInFlight.current = null; });
     return refreshInFlight.current;
@@ -77,7 +90,7 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
   }, [refresh, tokens]);
 
   const signIn = useCallback(async (input: LoginInput): Promise<void> => {
-    const response = await fetch('/api/auth/login', {
+    const response = await fetch(`${AUTH_API_BASE}/login`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json', 'x-device-id': deviceId() },
@@ -85,14 +98,24 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       cache: 'no-store',
     });
     const payload = await readEnvelope<AuthTokens>(response);
-    if (!response.ok || !payload.success || !payload.data) throw new Error(messageFrom(payload, 'Unable to sign in. Please try again.'));
-    setAuthentication(payload.data);
+    if (!response.ok || !payload.success || !payload.data) {
+      const fallback = response.status === 429
+        ? 'Too many sign-in attempts. Please wait and try again.'
+        : 'Unable to sign in. Check your credentials and account status.';
+      throw new Error(envelopeMessage(payload, fallback));
+    }
+    await setAuthentication(payload.data);
   }, [setAuthentication]);
 
   const logout = useCallback(async (): Promise<void> => {
     const accessToken = tokensRef.current?.accessToken;
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {}, cache: 'no-store' });
+      await fetch(`${AUTH_API_BASE}/logout`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+        cache: 'no-store',
+      });
     } finally {
       clearAuthentication();
     }
@@ -114,7 +137,10 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
     return response;
   }, [refresh]);
 
-  const value = useMemo<AuthContextValue>(() => ({ status, signIn, logout, authenticatedFetch }), [authenticatedFetch, logout, signIn, status]);
+  const value = useMemo<AuthContextValue>(
+    () => ({ status, sessionId: tokens?.sessionId, organizationId, signIn, logout, authenticatedFetch }),
+    [authenticatedFetch, logout, organizationId, signIn, status, tokens?.sessionId],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
