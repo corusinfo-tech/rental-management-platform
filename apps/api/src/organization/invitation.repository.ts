@@ -12,7 +12,7 @@ export class InvitationRepository {
 
   membershipWithPermission(userId: string, organizationId: string, permissionCode: string, transaction: Prisma.TransactionClient) {
     return transaction.organizationMembership.findFirst({
-      where: { organizationId, status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } }, roles: { some: { role: { code: { not: 'SUPER_ADMIN' }, deletedAt: null, permissions: { some: { permission: { code: permissionCode, deletedAt: null } } } } } } },
+      where: { organizationId, status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } }, roles: { some: { role: { code: { notIn: ['SUPER_ADMIN', 'OWNER', 'LANDLORD'] }, deletedAt: null, permissions: { some: { permission: { code: permissionCode, deletedAt: null } } } } } } },
     });
   }
 

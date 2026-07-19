@@ -1,88 +1,313 @@
-# Phase 1 Authorization and Isolation Implementation Report
+# Phase 1 Authorization and Isolation Validation Report
 
-Implementation date: 2026-07-19
-Scope: P0 authorization, data isolation, Settings repair, and automated negative authorization tests.
-Architecture: the existing NestJS/Next.js/PostgreSQL modular monolith is retained.
+Evidence date: 2026-07-19 (Asia/Kolkata)
 
-## Approved execution checklist
+Scope: Phase 1 validation only. Phase 2 was not started and production was not changed.
 
-- [x] Make platform administrators independent `PlatformPrincipal` records rather than organization members.
-- [x] Centralize portfolio permissions and resource-scope checks for properties, units, leases, rent schedules, invoices, and payments.
-- [x] Separate organization proprietor (`ORG_PROPRIETOR`) from managed-property asset owner (`ASSET_OWNER` plus `PropertyOwnership`).
-- [x] Give property-manager and finance roles portfolio-scoped capabilities by default; require `portfolio.access.all` for organization-wide access.
-- [x] Add explicit, auditable property-to-membership portfolio assignments and management endpoints.
-- [x] Link tenants through an accepted invitation and verified `User/Person`-to-`LeaseParty` relation. Email/mobile values are not authorization keys.
-- [x] Make Settings creation/backfill idempotent and make reads self-heal missing settings.
-- [x] Add negative authorization tests for platform, organization-wide, scoped manager, finance, asset-owner, tenant, outsider, suspended, and cross-organization cases.
-- [x] Retain the modular monolith and keep full owner/tenant portal UI work gated.
-- [x] Make no Phase 1 GST/tax-rule or payment/WhatsApp/SMS/document-template provider implementation.
+Architecture: the NestJS/Next.js/PostgreSQL modular monolith is retained.
+Acceptance state: all critical validation gates described below pass with zero critical skips. This report records a candidate for product-owner acceptance; it does not itself deploy or declare product acceptance.
 
-## Affected files
+## Repository evidence
 
-| Area                           | Primary files                                                                                                                                 |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data model and seed            | `prisma/schemas/{platform,identity,organization,property,rental,finance}.prisma`, `prisma/seed/identity.js`                                   |
-| Additive migration             | `prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql`                                                               |
-| Central authorization          | `apps/api/src/identity/authorization/{platform-principal.guard,portfolio-access.service,tenant-access.service}.ts`                            |
-| Portfolio assignment           | `apps/api/src/organization/portfolio-assignment.*`, `apps/api/src/organization/dto/portfolio-assignment.dto.ts`                               |
-| Organization identity/settings | approval, compliance, lifecycle, registration, invitation, role, and settings services/repositories/controllers under `apps/api/src`          |
-| Scoped domain operations       | property, lease, billing, invoice, and payment services/repositories under `apps/api/src`                                                     |
-| Automated evidence             | Phase 1 API tests under `apps/api/test`, endpoint-wiring test under `apps/web/test`, and `docs/audit-evidence/production-api-observations.md` |
-| Audit corrections              | `docs/DASHBOARD_AND_FEATURE_AUDIT.md`, `docs/UI_UX_AND_THEME_AUDIT.md`, `docs/REFERENCE_RESEARCH.md`                                          |
+- Branch: `agent/fix-production-migrations`
+- Validation baseline commit: `0d33d91211a3deec8c6305ec02dd1642ce57ae85`
+- Final tested implementation commit: recorded in the release attestation after the tested tree is committed
+- Upstream at validation start: `origin/agent/fix-production-migrations`
+- Git state at validation start: clean
+- Final Git status and push result: recorded in the release attestation after publication
+- Phase 1 migration: `20260719120000_phase1_authorization_isolation/migration.sql`
+- Final migration SHA-256: `1312bb9c48f00a77846af9ba8ca9e133278850d0313c799398b57e16acfdca9c`
+- Migration count: 24; `prisma migrate status` reports `Database schema is up to date!`
 
-## Additive migration sequence
+The exact Phase 1 commit file list is:
 
-1. Create `PlatformPrincipal` types/table and backfill active legacy global super-administrators. The legacy role path remains for application rollback compatibility.
-2. Make legacy `Property.ownerUserId` nullable, add/backfill `createdByUserId`, and retain `PropertyOwnership` as the asset-ownership foundation.
-3. Create `PropertyPortfolioAssignment` with organization/property/membership/user foreign keys and active-assignment indexes.
-4. Add nullable verified tenant-link columns to `LeaseParty` and an optional invitation-to-lease-party link.
-5. Add nullable `Payment.propertyId`; backfill only payments whose allocations resolve unambiguously to exactly one property.
-6. Idempotently insert missing `OrganizationSettings` rows.
-7. Upsert the Phase 1 permission catalog and new roles; grant organization-wide scope only to proprietor/admin roles and scoped capabilities to manager/finance/asset-owner roles.
-8. Assign `ORG_PROPRIETOR` to proprietor memberships and convert only non-proprietor legacy `OWNER` assignments to `ASSET_OWNER`.
+```text
+apps/api/src/finance/invoice.repository.ts
+apps/api/src/finance/invoice.service.ts
+apps/api/src/finance/payment.repository.ts
+apps/api/src/finance/payment.service.ts
+apps/api/src/identity/authorization/current-membership.resolver.ts
+apps/api/src/identity/authorization/platform-principal.guard.ts
+apps/api/src/identity/authorization/portfolio-access.service.ts
+apps/api/src/identity/authorization/tenant-access.service.ts
+apps/api/src/identity/identity.module.ts
+apps/api/src/identity/registration/public-registration.service.ts
+apps/api/src/identity/repositories/identity.repository.ts
+apps/api/src/organization/approval.controller.ts
+apps/api/src/organization/approval.repository.ts
+apps/api/src/organization/compliance.controller.ts
+apps/api/src/organization/compliance.repository.ts
+apps/api/src/organization/dto/invitation.dto.ts
+apps/api/src/organization/dto/portfolio-assignment.dto.ts
+apps/api/src/organization/invitation.controller.ts
+apps/api/src/organization/invitation.repository.ts
+apps/api/src/organization/invitation.service.ts
+apps/api/src/organization/lifecycle.repository.ts
+apps/api/src/organization/organization.module.ts
+apps/api/src/organization/organization.service.ts
+apps/api/src/organization/portfolio-assignment.controller.ts
+apps/api/src/organization/portfolio-assignment.repository.ts
+apps/api/src/organization/portfolio-assignment.service.ts
+apps/api/src/organization/role.controller.ts
+apps/api/src/organization/role.repository.ts
+apps/api/src/organization/role.service.ts
+apps/api/src/organization/settings.controller.ts
+apps/api/src/organization/settings.repository.ts
+apps/api/src/organization/settings.service.ts
+apps/api/src/property/property.repository.ts
+apps/api/src/property/property.service.ts
+apps/api/src/rental/billing.repository.ts
+apps/api/src/rental/billing.service.ts
+apps/api/src/rental/lease.repository.ts
+apps/api/src/rental/lease.service.ts
+apps/api/test/billing.service.test.mjs
+apps/api/test/invoice.service.test.mjs
+apps/api/test/lease.service.test.mjs
+apps/api/test/organization-invitation.service.test.mjs
+apps/api/test/organization-settings.service.test.mjs
+apps/api/test/payment.service.test.mjs
+apps/api/test/phase1-migration.test.mjs
+apps/api/test/platform-principal.guard.test.mjs
+apps/api/test/portfolio-access.service.test.mjs
+apps/api/test/portfolio-assignment.service.test.mjs
+apps/api/test/public-registration.service.test.mjs
+apps/api/test/tenant-access.service.test.mjs
+apps/web/test/management-api-wiring.test.mjs
+docs/DASHBOARD_AND_FEATURE_AUDIT.md
+docs/DASHBOARD_IMPLEMENTATION_PLAN.md
+docs/INTEGRATION_AND_TEMPLATE_AUDIT.md
+docs/PHASE_1_IMPLEMENTATION_REPORT.md
+docs/REFERENCE_RESEARCH.md
+docs/UI_UX_AND_THEME_AUDIT.md
+docs/audit-evidence/authenticated-dashboard-mobile-390.png
+docs/audit-evidence/authenticated-dashboard.png
+docs/audit-evidence/authenticated-invoices.png
+docs/audit-evidence/authenticated-leases.png
+docs/audit-evidence/authenticated-payments.png
+docs/audit-evidence/authenticated-properties-mobile-390.png
+docs/audit-evidence/authenticated-properties.png
+docs/audit-evidence/authenticated-settings.png
+docs/audit-evidence/production-api-observations.md
+prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql
+prisma/schemas/finance.prisma
+prisma/schemas/identity.prisma
+prisma/schemas/organization.prisma
+prisma/schemas/platform.prisma
+prisma/schemas/property.prisma
+prisma/schemas/rental.prisma
+prisma/seed/identity.js
+```
 
-The migration contains no `DROP TABLE`, `DROP COLUMN`, or `DROP TYPE` operation.
+Validation added or changed these exact working-tree files:
 
-## Rollback and forward-fix procedure
+```text
+M  apps/api/src/identity/authorization/current-membership.resolver.ts
+M  apps/api/src/identity/authorization/portfolio-access.service.ts
+M  apps/api/src/organization/invitation.repository.ts
+M  apps/api/src/organization/role.repository.ts
+M  apps/api/src/organization/settings.repository.ts
+M  docs/PHASE_1_IMPLEMENTATION_REPORT.md
+M  packages/database/package.json
+M  prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql
+M  prisma/schemas/finance.prisma
+M  prisma/schemas/identity.prisma
+M  prisma/schemas/property.prisma
+M  prisma/seed/identity.js
+M  tests/identity-database.test.mjs
+?? apps/api/test/phase1-database.integration.test.mjs
+?? docs/PHASE_1_PRODUCTION_RUNBOOK.md
+?? scripts/validate-phase1-upgrade.sh
+?? tests/fixtures/phase1-http-fixtures.mjs
+?? tests/fixtures/phase1-preupgrade.sql
+?? tests/fixtures/phase1-upgrade-assertions.sql
+?? tests/phase1-database.test.mjs
+?? tests/phase1-http.test.mjs
+```
 
-1. Before deployment, take a database snapshot and record the application image/commit and Prisma migration state.
-2. Deploy the migration once, then deploy API, worker, and web from the same commit. Do not run destructive SQL to reverse the schema.
-3. If the new application fails before it writes Phase 1-only data, roll the application image back while leaving additive tables/columns in place. The legacy platform role and property-owner column were retained.
-4. If the new application has written properties with a null legacy `ownerUserId`, do not roll directly to a version that assumes that column is non-null. Forward-fix the application, or run a reviewed compatibility backfill based on an explicitly approved legacy-owner mapping before rolling the image back.
-5. If a backfill is wrong, correct affected rows with an audited forward migration. Never drop `PlatformPrincipal`, verified tenant links, portfolio assignments, or payment scope while they may contain production writes.
-6. Re-run the Settings insert safely if needed; its `ON CONFLICT (organizationId) DO NOTHING` behavior is tested.
+## Execution checklist
 
-## Acceptance and test matrix
+- [x] Keep platform principals separate from organization administrators.
+- [x] Keep organization proprietors separate from managed-property asset owners.
+- [x] Require explicit portfolio assignments for managers and finance users; organization-wide access requires `portfolio.access.all`.
+- [x] Require accepted invitations and verified Person-to-LeaseParty links for tenants; email/mobile matching is never an authorization key.
+- [x] Add database constraints and guards for organization-consistent assignments, payments, invitations, and tenant links.
+- [x] Make concurrent Settings initialization create exactly one row.
+- [x] Ensure legacy `SUPER_ADMIN`, `OWNER`, and `LANDLORD` roles do not bypass the new organization policy.
+- [x] Validate a clean migration and a representative pre-Phase-1 upgrade.
+- [x] Run database-backed, API integration, negative authorization, and live HTTP role-matrix tests.
+- [x] Retain real-endpoint evidence in `apps/web/test/management-api-wiring.test.mjs` and `docs/audit-evidence/production-api-observations.md`.
+- [x] Keep GST/tax rules and payment, WhatsApp, SMS, and document-template providers out of Phase 1.
+- [x] Do not deploy and do not begin Phase 2.
 
-| Principal/scenario            | Expected result                                                                                                                                                                         | Automated evidence                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Platform administrator        | Platform actions use an active independent principal; organization membership cannot substitute, and the retained legacy platform role contributes no organization-workspace permission | `platform-principal.guard.test.mjs`, `portfolio-access.service.test.mjs`               |
-| Organization proprietor/admin | Organization-wide resource scope only with explicit `portfolio.access.all`                                                                                                              | `portfolio-access.service.test.mjs`                                                    |
-| Property manager              | Assigned properties only by default; direct unassigned property/lease IDs denied                                                                                                        | `portfolio-access.service.test.mjs`                                                    |
-| Finance user                  | Assigned invoice/payment scope; cannot infer property-management permission                                                                                                             | `portfolio-access.service.test.mjs`, `payment.service.test.mjs`                        |
-| Asset owner                   | Scope is the union of explicit assignments and `PropertyOwnership`, without organization-wide access                                                                                    | `portfolio-access.service.test.mjs`                                                    |
-| Portfolio grant               | Only organization-wide member managers can grant; cross-organization property IDs fail before writes                                                                                    | `portfolio-assignment.service.test.mjs`                                                |
-| Tenant                        | Only verified Person-to-LeaseParty links resolve lease/invoice/payment/document scope; every payment allocation must remain in linked leases                                            | `tenant-access.service.test.mjs`, `organization-invitation.service.test.mjs`           |
-| Outsider/suspended/cross-org  | Denied before resource lookup or assignment mutation                                                                                                                                    | `portfolio-access.service.test.mjs`, `portfolio-assignment.service.test.mjs`           |
-| Settings                      | Missing settings are created on read and migration backfill is rerunnable                                                                                                               | `organization-settings.service.test.mjs`, `phase1-migration.test.mjs`                  |
-| Production-page API claim     | Dashboard/management pages call authenticated real organization/property/lease/invoice/payment/settings endpoints and reject failed envelopes                                           | `management-api-wiring.test.mjs`, `docs/audit-evidence/production-api-observations.md` |
-| Migration safety              | Additive contract, backfills, verified FK, and targeted legacy-role conversion                                                                                                          | `phase1-migration.test.mjs`; Prisma schema validation/generation                       |
+## Disposable integration environment
 
-## Verification results
+PostgreSQL 16.14 was provisioned under a generated validation-only temporary directory and bound to loopback on a non-production port. The isolated databases were `phase1_clean`, `phase1_upgrade`, `phase1_api`, and `phase1_http`. Redis 8.8.0 ran on loopback without persistence, and the HTTP fixture API used a loopback-only validation port. The values were created for this local run, were never production values, and are represented by placeholders below so a copied command cannot be mistaken for a production command.
 
-- Prisma schema validation: passed.
+The fixture password is a deterministic test-only value, all fixture addresses use the reserved `.test` domain, and all fixture people and identifiers are synthetic. The release-content scan found no production credential, provider token, private key, real personal data, or user-specific absolute filesystem path.
+
+## Clean database and schema evidence
+
+Every one of the 24 migrations applied to an empty `phase1_clean` database. Final checks reported:
+
+- Prisma migration status: up to date, no pending migrations.
+- Prisma schema validation: valid.
 - Prisma Client generation: passed with Prisma 6.19.3.
-- API TypeScript and automated tests: passed (96 tests, including tenant payment-allocation isolation and both directions of the platform/organization principal boundary).
-- Web TypeScript and automated tests: passed (8 tests).
-- Full monorepo test pipeline: passed for all 12 packages; the pre-existing database integration suite reported one explicit skip because `IDENTITY_TEST_DATABASE_URL` is not configured.
-- Monorepo production build: passed for all 12 packages; Next.js compiled and generated all routes.
-- Database execution: not performed locally because this checkout has no disposable integration-database configuration. Production must run the migration through the release profile after snapshotting and then execute the smoke checks below.
-- Repository-wide Prettier check: not clean; it reports 230 pre-existing/unrelated formatting targets across current, legacy, documentation, configuration, and lock files. Phase 1 lint and `git diff --check` pass, and this implementation does not bulk-reformat unrelated files.
+- Database integration: 21 passed, 0 failed, 0 skipped.
+- Required tables verified: `PlatformPrincipal`, `PropertyPortfolioAssignment`, plus altered Settings, LeaseParty, invitation, Property, and Payment structures.
+- Composite organization foreign keys verified: `PropertyPortfolioAssignment_propertyId_organizationId_fkey`, `PropertyPortfolioAssignment_membershipId_organizationId_fkey`, and `Payment_propertyId_organizationId_fkey`.
+- Unique indexes verified: `OrganizationMembership_id_organizationId_key`, `Property_id_organizationId_key`, `OrganizationSettings_organizationId_key`, `PlatformPrincipal_userId_key`, `LeaseParty_linkVerificationId_key`, and `PropertyPortfolioAssignment_membershipId_propertyId_key`.
+- Scoped indexes verified: `PropertyPortfolioAssignment_organizationId_membershipId_revoked`, `PropertyPortfolioAssignment_propertyId_revokedAt_idx`, and `Payment_organizationId_propertyId_paidAt_idx`.
+- Database guards verified: `PropertyPortfolioAssignment_assigner_organization_guard`, `OrganizationInvitation_lease_party_organization_guard`, and `LeaseParty_verified_identity_link_guard`.
 
-## Production smoke checks
+The database-backed tests deliberately attempt cross-organization property, membership, actor, payment, invitation, and tenant-link writes and confirm PostgreSQL rejects them.
 
-1. Confirm `docker compose --env-file .env.production -f docker-compose.production.yml --profile release config --services` includes `migrate`.
-2. Build exact service names: `docker compose --env-file .env.production -f docker-compose.production.yml build migrate api worker web`.
-3. Run migration: `docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate`.
-4. Start/update runtime services: `docker compose --env-file .env.production -f docker-compose.production.yml up -d api worker web`.
-5. Verify API and web health, Settings for an existing organization, a platform-admin approval read, a scoped-manager property list, a scoped-finance invoice/payment list, and negative cross-organization requests.
+## Representative pre-Phase-1 upgrade
+
+`tests/fixtures/phase1-preupgrade.sql` was loaded after all migrations preceding `20260719120000_phase1_authorization_isolation`; the Phase 1 migration was then applied and `tests/fixtures/phase1-upgrade-assertions.sql` executed.
+
+| Measure                                      | Before |                             After |
+| -------------------------------------------- | -----: | --------------------------------: |
+| Organizations                                |      2 |                                 2 |
+| Organization Settings                        |      0 |                                 2 |
+| Platform principals                          |      0 |                                 1 |
+| Properties                                   |      3 |                                 3 |
+| Payments                                     |      3 |                                 3 |
+| Payment allocations                          |      4 |                                 4 |
+| Payments with unambiguous property           |      0 |                                 1 |
+| Ambiguous/unmatched payments left null       |      3 |                                 2 |
+| Lease parties                                |      1 |                                 1 |
+| Automatically linked lease parties           |      0 |                                 0 |
+| Automatically inferred portfolio assignments |      0 |                                 0 |
+| Membership-role rows                         |      3 | role-conversion assertions passed |
+
+Backfill outcomes:
+
+- Settings backfill created exactly one row for each of two organizations.
+- PlatformPrincipal backfill created exactly one active principal from the representative legacy platform administrator.
+- The proprietor retained compatibility `OWNER` and gained `ORG_PROPRIETOR`; the non-proprietor legacy owner became `ASSET_OWNER`; the legacy platform membership retained `SUPER_ADMIN` only as a permissionless compatibility role.
+- All three properties received `createdByUserId`; no portfolio assignments were inferred.
+- No tenant identity link was inferred from email or mobile.
+- `payment-single` resolved to `property-a1`.
+- `payment-multi` remained null because its allocations span properties.
+- `payment-cross-org` remained null because the payment organization and allocated property organization differ.
+- Ambiguous/unmatched count after backfill: 2; cross-organization auto-links: 0.
+
+## Authorization and API evidence
+
+The forced, non-cached monorepo run passed all 12 package tasks. Critical test totals were:
+
+| Suite                           | Passed | Failed | Skipped |
+| ------------------------------- | -----: | -----: | ------: |
+| Database integration            |     21 |      0 |       0 |
+| API unit + database integration |    102 |      0 |       0 |
+| Web endpoint wiring             |      8 |      0 |       0 |
+| Worker                          |      6 |      0 |       0 |
+| Live HTTP fixture matrix        |     10 |      0 |       0 |
+| Arithmetic total                |    147 |      0 |       0 |
+
+The 147 count is the arithmetic sum of independent test cases from the five listed runners: database and API integration are separate files and databases, web and worker are separate packages, and the HTTP matrix is a separate process against the running API. Their acceptance themes intentionally overlap, so 147 is not a count of unique authorization requirements. The SQL upgrade assertions are also independent but are reported as an upgrade validation rather than included as Node test cases.
+
+Database-backed acceptance coverage proves:
+
+- Assignment property, membership, assigning user, and organization consistency.
+- Cross-organization assignments are rejected by composite foreign keys and actor guards.
+- Asset owners see only owned or explicitly assigned properties.
+- Managers and finance users see assigned portfolios only; finance capability does not imply property-management capability.
+- Accepted invitations cannot create cross-organization tenant links.
+- Suspended memberships and suspended platform principals lose access; revoked assignments disappear from scope.
+- Tenant payment access validates every allocation.
+- Multi-property or otherwise ambiguous historical payments default to denial.
+- Eight concurrent Settings reads produce exactly one Settings row.
+- Legacy `SUPER_ADMIN` and `OWNER`, even when manually associated with new permissions in the test database, cannot enter the new organization authorization path.
+
+The deterministic HTTP run started the real Nest API against `phase1_http`, authenticated through the normal session endpoint, and exercised platform administrator, organization proprietor, organization admin, scoped property manager, scoped finance user, asset owner, tenant, outsider, suspended user, and a second organization. All 10 scenarios passed, including direct-resource and cross-organization denials.
+
+## Exact validation commands
+
+Commands were run from the repository root. The bundled Node/pnpm paths and local PostgreSQL/Redis binary paths were prepended to `PATH`. This sanitized command transcript uses explicit validation placeholders instead of a workstation username, generated temporary path, or reusable database URL.
+
+```bash
+export PHASE1_PG_BASE_URL='postgresql://<validation-user>@127.0.0.1:<validation-port>'
+export PHASE1_REDIS_URL='redis://127.0.0.1:<validation-port>/15'
+export PHASE1_HTTP_URL='http://127.0.0.1:<validation-port>'
+
+pnpm typecheck
+pnpm lint
+pnpm build
+
+DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_clean" pnpm exec prisma migrate status --schema prisma/schemas
+DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_clean" pnpm exec prisma validate --schema prisma/schemas
+DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_clean" pnpm exec prisma generate --schema prisma/schemas
+
+IDENTITY_TEST_DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_clean" pnpm --filter @noagent4u/database test
+PHASE1_UPGRADE_DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_upgrade" PHASE1_PSQL_BIN="$(command -v psql)" scripts/validate-phase1-upgrade.sh
+PHASE1_API_TEST_DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_api" DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_api" pnpm --filter @noagent4u/api test
+
+PHASE1_TEST_API_URL="${PHASE1_HTTP_URL}" node --test tests/phase1-http.test.mjs
+
+IDENTITY_TEST_DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_clean" \
+PHASE1_API_TEST_DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_api" \
+DATABASE_URL="${PHASE1_PG_BASE_URL}/phase1_api" \
+REDIS_URL="${PHASE1_REDIS_URL}" \
+pnpm exec turbo run test --force --env-mode=loose
+
+git diff --check
+git status --short
+git diff-tree --no-commit-id --name-only -r 0d33d91211a3deec8c6305ec02dd1642ce57ae85
+shasum -a 256 prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql
+```
+
+The `--force --env-mode=loose` flags are required for the aggregate evidence run: without them Turbo can replay a cache entry created when the database URL was absent and display the database-gated API suite as skipped even though a URL is present in the parent shell.
+
+## Build, typecheck, lint, and remaining observations
+
+- `pnpm typecheck`: 12/12 package tasks passed.
+- `pnpm lint`: 12/12 package tasks passed.
+- `pnpm build`: 12/12 package tasks passed; Next.js compiled and generated 16 routes.
+- `git diff --check`: passed.
+- Remaining critical failures: none.
+- Remaining critical skips: none in the forced database-configured run.
+- Non-critical observation: Next.js warns that multiple lockfiles exist above the application directory and infers a workspace root. It did not affect compilation or route generation.
+- A repository-wide Prettier audit still reports broad pre-existing formatting debt; no unrelated bulk formatting was performed.
+
+## Additive migration and recovery procedure
+
+The Phase 1 migration creates the independent platform-principal and portfolio-assignment structures, adds verified tenant-link and payment-scope columns, backfills Settings/platform/property/payment data conservatively, adds composite organization constraints and validation triggers, creates the new permission/role catalog, and converts only the intended legacy role rows. It contains no `DROP TABLE`, `DROP COLUMN`, or `DROP TYPE` operation.
+
+Before production, snapshot PostgreSQL and record the application image, commit, and migration status. Deploy migration, API, worker, and web from one immutable commit. If the application fails before Phase 1-only writes, roll back the application image while retaining the additive schema. If Phase 1-only writes have occurred, prefer a reviewed forward fix; do not remove new tables, columns, links, assignments, or payment scope. Correct any backfill with a new audited migration. Do not roll back to code that assumes legacy `Property.ownerUserId` is non-null unless an explicit compatibility backfill has been reviewed.
+
+## Final diff summary
+
+- **Schema and migration:** composite organization keys and foreign keys, assignment/payment constraints, conservative payment backfill, legacy-role conversion, and database guards for assignment actors and verified tenant links.
+- **Authorization:** legacy `SUPER_ADMIN`, `OWNER`, and `LANDLORD` compatibility roles are excluded from organization-workspace permission resolution.
+- **Organization/portfolio management:** property, membership, organization, and assigning-user consistency is enforced for portfolio assignments.
+- **Tenant linkage:** invitations and verified Person-to-LeaseParty links must remain within one organization and require active membership.
+- **Finance scope:** payment property scope uses a composite property/organization relation; ambiguous, multi-property, and cross-organization historical payments remain denied.
+- **Settings repair:** concurrent first reads use idempotent `createMany(skipDuplicates)` and return the single organization Settings row.
+- **Tests and fixtures:** clean-database, pre-Phase-1 upgrade, database-backed policy, deterministic HTTP principal matrix, and negative cross-organization fixtures and assertions.
+- **Documentation:** final validation evidence and `docs/PHASE_1_PRODUCTION_RUNBOOK.md`; no Phase 2 or provider implementation.
+
+## Production smoke commands — not executed
+
+These are the exact proposed commands and expected outcomes. They were recorded only; this validation did not deploy.
+
+```bash
+docker compose --env-file .env.production -f docker-compose.production.yml --profile release config --services
+# Expected: postgres, redis, api, migrate, web, worker
+
+docker compose --env-file .env.production -f docker-compose.production.yml build migrate api worker web
+# Expected: all four named build targets succeed: migrate, api, worker, and web; do not type webA
+
+docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate
+# Expected: all 24 migrations applied or "No pending migrations to apply"
+
+docker compose --env-file .env.production -f docker-compose.production.yml up -d api worker web
+# Expected: the three runtime services are healthy
+
+docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate pnpm exec prisma migrate status --schema prisma/schemas
+# Expected: "Database schema is up to date!"
+```
+
+After deployment approval, authenticated smoke requests should expect: platform admin can access a platform endpoint but is denied an organization workspace without membership; proprietor/admin can see the whole organization; manager and finance see assigned portfolios only; asset owner sees owned/assigned properties only; tenant sees only verified linked lease resources; outsider, suspended user, and cross-organization direct IDs receive denial. Settings reads should return one organization row even under concurrent first access. No production command or HTTP smoke request was executed during this validation.
+
+The operator-ready deployment sequence, evidence capture, smoke matrix, logs, and rollback/forward-fix conditions are in `docs/PHASE_1_PRODUCTION_RUNBOOK.md`.

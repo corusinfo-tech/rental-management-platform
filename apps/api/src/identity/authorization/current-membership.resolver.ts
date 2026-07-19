@@ -30,7 +30,7 @@ export class CurrentMembershipResolver {
       id: membership.id,
       organizationId: membership.organizationId,
       permissionCodes: membership.roles
-        .filter((membershipRole) => membershipRole.role.code !== 'SUPER_ADMIN')
+        .filter((membershipRole) => !['SUPER_ADMIN', 'OWNER', 'LANDLORD'].includes(membershipRole.role.code))
         .flatMap((membershipRole) =>
           membershipRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
         ),

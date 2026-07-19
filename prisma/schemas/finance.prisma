@@ -126,7 +126,7 @@ model Payment {
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  property             Property?           @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  property             Property?           @relation(fields: [propertyId, organizationId], references: [id, organizationId], onDelete: Restrict)
   allocations          PaymentAllocation[]
   receipt              Receipt?
   refunds              Refund[]

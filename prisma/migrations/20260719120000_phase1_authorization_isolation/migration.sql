@@ -44,6 +44,8 @@ ALTER TABLE "Property" ALTER COLUMN "ownerUserId" DROP NOT NULL;
 ALTER TABLE "Property" ADD COLUMN "createdByUserId" TEXT;
 UPDATE "Property" SET "createdByUserId" = "ownerUserId" WHERE "createdByUserId" IS NULL;
 CREATE INDEX "Property_createdByUserId_createdAt_idx" ON "Property"("createdByUserId", "createdAt");
+CREATE UNIQUE INDEX "Property_id_organizationId_key" ON "Property"("id", "organizationId");
+CREATE UNIQUE INDEX "OrganizationMembership_id_organizationId_key" ON "OrganizationMembership"("id", "organizationId");
 ALTER TABLE "Property" ADD CONSTRAINT "Property_createdByUserId_fkey"
   FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -63,9 +65,33 @@ CREATE INDEX "PropertyPortfolioAssignment_organizationId_membershipId_revokedAt_
 CREATE INDEX "PropertyPortfolioAssignment_propertyId_revokedAt_idx" ON "PropertyPortfolioAssignment"("propertyId", "revokedAt");
 CREATE INDEX "PropertyPortfolioAssignment_assignedByUserId_idx" ON "PropertyPortfolioAssignment"("assignedByUserId");
 ALTER TABLE "PropertyPortfolioAssignment" ADD CONSTRAINT "PropertyPortfolioAssignment_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "PropertyPortfolioAssignment" ADD CONSTRAINT "PropertyPortfolioAssignment_propertyId_fkey" FOREIGN KEY ("propertyId") REFERENCES "Property"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "PropertyPortfolioAssignment" ADD CONSTRAINT "PropertyPortfolioAssignment_membershipId_fkey" FOREIGN KEY ("membershipId") REFERENCES "OrganizationMembership"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "PropertyPortfolioAssignment" ADD CONSTRAINT "PropertyPortfolioAssignment_propertyId_organizationId_fkey" FOREIGN KEY ("propertyId", "organizationId") REFERENCES "Property"("id", "organizationId") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "PropertyPortfolioAssignment" ADD CONSTRAINT "PropertyPortfolioAssignment_membershipId_organizationId_fkey" FOREIGN KEY ("membershipId", "organizationId") REFERENCES "OrganizationMembership"("id", "organizationId") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PropertyPortfolioAssignment" ADD CONSTRAINT "PropertyPortfolioAssignment_assignedByUserId_fkey" FOREIGN KEY ("assignedByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE FUNCTION "enforce_portfolio_assignment_assigner_organization"() RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW."assignedByUserId" IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM "OrganizationMembership" membership
+    JOIN "Person" person ON person."id" = membership."personId"
+    JOIN "User" actor ON actor."personId" = person."id"
+    WHERE actor."id" = NEW."assignedByUserId"
+      AND actor."deletedAt" IS NULL
+      AND membership."organizationId" = NEW."organizationId"
+      AND membership."status" = 'ACTIVE'
+      AND membership."deletedAt" IS NULL
+  ) THEN
+    RAISE EXCEPTION 'portfolio assignment actor must be an active member of the organization'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "PropertyPortfolioAssignment_assigner_organization_guard"
+BEFORE INSERT OR UPDATE ON "PropertyPortfolioAssignment"
+FOR EACH ROW EXECUTE FUNCTION "enforce_portfolio_assignment_assigner_organization"();
 
 -- Verified invitation linkage. No email/mobile values are used as an
 -- authorization key; the accepted verification identifies the link event.
@@ -80,6 +106,65 @@ ALTER TABLE "LeaseParty" ADD CONSTRAINT "LeaseParty_personId_fkey" FOREIGN KEY (
 ALTER TABLE "LeaseParty" ADD CONSTRAINT "LeaseParty_linkVerificationId_fkey" FOREIGN KEY ("linkVerificationId") REFERENCES "Verification"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "OrganizationInvitation" ADD CONSTRAINT "OrganizationInvitation_leasePartyId_fkey" FOREIGN KEY ("leasePartyId") REFERENCES "LeaseParty"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+CREATE FUNCTION "enforce_invitation_lease_party_organization"() RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW."leasePartyId" IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM "LeaseParty" party
+    JOIN "Lease" lease ON lease."id" = party."leaseId"
+    WHERE party."id" = NEW."leasePartyId"
+      AND lease."organizationId" = NEW."organizationId"
+      AND lease."deletedAt" IS NULL
+  ) THEN
+    RAISE EXCEPTION 'invitation lease party must belong to the invitation organization'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "OrganizationInvitation_lease_party_organization_guard"
+BEFORE INSERT OR UPDATE ON "OrganizationInvitation"
+FOR EACH ROW EXECUTE FUNCTION "enforce_invitation_lease_party_organization"();
+
+CREATE FUNCTION "enforce_verified_lease_party_link"() RETURNS TRIGGER AS $$
+DECLARE
+  lease_organization_id TEXT;
+BEGIN
+  IF NEW."personId" IS NULL AND NEW."linkVerificationId" IS NULL AND NEW."linkedAt" IS NULL THEN
+    RETURN NEW;
+  END IF;
+  IF NEW."personId" IS NULL OR NEW."linkVerificationId" IS NULL OR NEW."linkedAt" IS NULL THEN
+    RAISE EXCEPTION 'lease party identity links require person, verification, and linked timestamp'
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT lease."organizationId" INTO lease_organization_id
+  FROM "Lease" lease WHERE lease."id" = NEW."leaseId" AND lease."deletedAt" IS NULL;
+
+  IF lease_organization_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM "OrganizationMembership" membership
+    WHERE membership."organizationId" = lease_organization_id
+      AND membership."personId" = NEW."personId"
+      AND membership."status" = 'ACTIVE'
+      AND membership."deletedAt" IS NULL
+  ) OR NOT EXISTS (
+    SELECT 1 FROM "OrganizationInvitation" invitation
+    WHERE invitation."organizationId" = lease_organization_id
+      AND invitation."leasePartyId" = NEW."id"
+      AND invitation."verificationId" = NEW."linkVerificationId"
+      AND invitation."status" = 'ACCEPTED'
+  ) THEN
+    RAISE EXCEPTION 'lease party identity link requires an accepted same-organization invitation and active membership'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "LeaseParty_verified_identity_link_guard"
+BEFORE INSERT OR UPDATE OF "personId", "linkVerificationId", "linkedAt" ON "LeaseParty"
+FOR EACH ROW EXECUTE FUNCTION "enforce_verified_lease_party_link"();
+
 -- Anchor finance scope to one property. Existing payments are backfilled only
 -- when every allocation resolves to exactly one property. Ambiguous rows stay
 -- NULL and are restricted to organization-wide finance access.
@@ -87,12 +172,14 @@ ALTER TABLE "Payment" ADD COLUMN "propertyId" TEXT;
 WITH payment_property AS (
   SELECT pa."paymentId", MIN(p."id") AS "propertyId"
   FROM "PaymentAllocation" pa
+  JOIN "Payment" payment ON payment."id" = pa."paymentId"
   JOIN "Invoice" i ON i."id" = pa."invoiceId"
   JOIN "Lease" l ON l."id" = i."leaseId"
   JOIN "Unit" u ON u."id" = l."unitId"
   JOIN "Floor" f ON f."id" = u."floorId"
   JOIN "Building" b ON b."id" = f."buildingId"
   JOIN "Property" p ON p."id" = b."propertyId"
+  WHERE payment."organizationId" = p."organizationId"
   GROUP BY pa."paymentId"
   HAVING COUNT(DISTINCT p."id") = 1
 )
@@ -101,7 +188,7 @@ SET "propertyId" = payment_property."propertyId"
 FROM payment_property
 WHERE payment."id" = payment_property."paymentId";
 CREATE INDEX "Payment_organizationId_propertyId_paidAt_idx" ON "Payment"("organizationId", "propertyId", "paidAt");
-ALTER TABLE "Payment" ADD CONSTRAINT "Payment_propertyId_fkey" FOREIGN KEY ("propertyId") REFERENCES "Property"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Payment" ADD CONSTRAINT "Payment_propertyId_organizationId_fkey" FOREIGN KEY ("propertyId", "organizationId") REFERENCES "Property"("id", "organizationId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- Repair organizations created through registration paths that predated or
 -- bypassed settings creation. This insert is idempotent.
@@ -137,7 +224,7 @@ JOIN "Permission" permission ON permission."code" IN (
   'portfolio.access.all', 'property.read', 'property.manage', 'lease.read', 'lease.manage',
   'invoice.read', 'invoice.manage', 'payment.read', 'payment.manage', 'organization.settings.read'
 )
-WHERE role."organizationId" IS NULL AND role."isSystem" = true AND role."deletedAt" IS NULL AND role."code" IN ('OWNER', 'ADMIN', 'LANDLORD', 'ORG_PROPRIETOR')
+WHERE role."organizationId" IS NULL AND role."isSystem" = true AND role."deletedAt" IS NULL AND role."code" IN ('ADMIN', 'ORG_PROPRIETOR')
 ON CONFLICT ("roleId", "permissionId") DO NOTHING;
 
 INSERT INTO "RolePermission" ("roleId", "permissionId", "createdAt")

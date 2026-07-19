@@ -170,6 +170,7 @@ model OrganizationMembership {
   portfolioAssignments PropertyPortfolioAssignment[]
 
   @@unique([organizationId, personId])
+  @@unique([id, organizationId])
   @@index([organizationId, status])
   @@index([personId, status])
   @@index([deletedAt])

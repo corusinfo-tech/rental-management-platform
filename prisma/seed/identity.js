@@ -27,7 +27,7 @@ const portfolioRead = ['identity.profile.read', 'property.read', 'lease.read', '
 
 const roles = [
   ['SUPER_ADMIN', 'Legacy Platform Super Administrator', []],
-  ['OWNER', 'Legacy Owner', organizationWide],
+  ['OWNER', 'Legacy Owner', []],
   ['ORG_PROPRIETOR', 'Organization Proprietor', organizationWide],
   ['ASSET_OWNER', 'Managed Property Asset Owner', portfolioRead],
   ['ADMIN', 'Administrator', organizationWide],
@@ -36,7 +36,7 @@ const roles = [
   ['MAINTENANCE', 'Maintenance', ['identity.profile.read']],
   ['SUPPORT', 'Support', ['identity.profile.read']],
   ['VIEWER', 'Viewer', portfolioRead],
-  ['LANDLORD', 'Legacy Landlord', organizationWide],
+  ['LANDLORD', 'Legacy Landlord', []],
   ['AGENT', 'Agent', ['identity.profile.read', 'organization.members.read']],
   ['TENANT', 'Tenant', ['identity.profile.read', 'identity.profile.write']],
 ];

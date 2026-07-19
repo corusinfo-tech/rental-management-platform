@@ -61,6 +61,7 @@ model Property {
   payments             Payment[]
 
   @@unique([organizationId, code])
+  @@unique([id, organizationId])
   @@index([organizationId, status, deletedAt])
   @@index([organizationId, name])
   @@index([ownerUserId, deletedAt])
@@ -224,8 +225,8 @@ model PropertyPortfolioAssignment {
   assignedAt       DateTime               @default(now())
   revokedAt        DateTime?
   organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  property         Property               @relation(fields: [propertyId], references: [id], onDelete: Restrict)
-  membership       OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  property         Property               @relation(fields: [propertyId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  membership       OrganizationMembership @relation(fields: [membershipId, organizationId], references: [id, organizationId], onDelete: Restrict)
   assignedBy       User?                  @relation("PortfolioAssignmentAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
 
   @@unique([membershipId, propertyId])

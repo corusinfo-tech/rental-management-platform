@@ -73,8 +73,8 @@ if (shouldRun) {
       prisma.user.count(),
       prisma.organization.count(),
     ]);
-    assert.equal(roles, 11);
-    assert.equal(permissions, 7);
+    assert.equal(roles, 13);
+    assert.equal(permissions, 17);
     assert.equal(users, 0);
     assert.equal(organizations, 0);
   });

@@ -70,7 +70,7 @@ export class PortfolioAccessService {
     const permissionCodes = [
       ...new Set(
         membership.roles
-          .filter((membershipRole) => membershipRole.role.code !== 'SUPER_ADMIN')
+          .filter((membershipRole) => !['SUPER_ADMIN', 'OWNER', 'LANDLORD'].includes(membershipRole.role.code))
           .flatMap((membershipRole) =>
             membershipRole.role.permissions
               .filter((rolePermission) => !rolePermission.permission.deletedAt)
