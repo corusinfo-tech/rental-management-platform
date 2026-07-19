@@ -11,10 +11,11 @@ Acceptance state: all critical validation gates described below pass with zero c
 
 - Branch: `agent/fix-production-migrations`
 - Validation baseline commit: `0d33d91211a3deec8c6305ec02dd1642ce57ae85`
-- Final tested implementation commit: recorded in the release attestation after the tested tree is committed
+- Final tested implementation commit: `d6ebf44ffdc265d3d0b668cad093326750adc33f`
 - Upstream at validation start: `origin/agent/fix-production-migrations`
 - Git state at validation start: clean
-- Final Git status and push result: recorded in the release attestation after publication
+- Git status immediately after the tested implementation commit: clean
+- Push result: `d6ebf44ffdc265d3d0b668cad093326750adc33f` pushed successfully to `origin/agent/fix-production-migrations`
 - Phase 1 migration: `20260719120000_phase1_authorization_isolation/migration.sql`
 - Final migration SHA-256: `1312bb9c48f00a77846af9ba8ca9e133278850d0313c799398b57e16acfdca9c`
 - Migration count: 24; `prisma migrate status` reports `Database schema is up to date!`
@@ -98,7 +99,7 @@ prisma/schemas/rental.prisma
 prisma/seed/identity.js
 ```
 
-Validation added or changed these exact working-tree files:
+The final tested implementation commit contains this exact validation delta:
 
 ```text
 M  apps/api/src/identity/authorization/current-membership.resolver.ts
@@ -114,15 +115,31 @@ M  prisma/schemas/identity.prisma
 M  prisma/schemas/property.prisma
 M  prisma/seed/identity.js
 M  tests/identity-database.test.mjs
-?? apps/api/test/phase1-database.integration.test.mjs
-?? docs/PHASE_1_PRODUCTION_RUNBOOK.md
-?? scripts/validate-phase1-upgrade.sh
-?? tests/fixtures/phase1-http-fixtures.mjs
-?? tests/fixtures/phase1-preupgrade.sql
-?? tests/fixtures/phase1-upgrade-assertions.sql
-?? tests/phase1-database.test.mjs
-?? tests/phase1-http.test.mjs
+A  apps/api/test/phase1-database.integration.test.mjs
+A  docs/PHASE_1_PRODUCTION_RUNBOOK.md
+A  scripts/validate-phase1-upgrade.sh
+A  tests/fixtures/phase1-http-fixtures.mjs
+A  tests/fixtures/phase1-preupgrade.sql
+A  tests/fixtures/phase1-upgrade-assertions.sql
+A  tests/phase1-database.test.mjs
+A  tests/phase1-http.test.mjs
 ```
+
+## Final release attestation
+
+- Tested source SHA: `d6ebf44ffdc265d3d0b668cad093326750adc33f`
+- Migration SHA-256: `1312bb9c48f00a77846af9ba8ca9e133278850d0313c799398b57e16acfdca9c`
+- Tested-tree Git status after commit: clean
+- Remote publication: successful to `origin/agent/fix-production-migrations`
+- Typecheck: 12/12 package tasks passed
+- Lint: 12/12 package tasks passed
+- Build: 12/12 package tasks passed
+- Forced monorepo tests: 12/12 package tasks passed, with 102/102 API and 21/21 database tests, zero failures and zero critical skips
+- HTTP role matrix: 10/10 passed, zero skipped
+- Representative pre-Phase-1 upgrade: passed all SQL assertions
+- Diff whitespace validation: `git diff --check` passed
+
+Commit `d6ebf44ffdc265d3d0b668cad093326750adc33f` is exactly the source tree on which the final commands ran. This attestation is a documentation-only follow-up because a Git commit cannot embed its own SHA without changing that SHA; it does not alter application source, schema, migration, fixtures, scripts, or tests.
 
 ## Execution checklist
 
