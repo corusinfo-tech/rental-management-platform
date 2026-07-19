@@ -19,24 +19,27 @@ chmod 600 .env.production
 
 Edit `.env.production`. Generate unique secrets with `openssl rand -base64 48`; URL-encode any special characters placed in `DATABASE_URL`.
 
-## 2. Create and apply migrations
+## 2. Apply committed migrations
 
-Before the first production deployment, create and review an initial Prisma migration in development or CI:
+Create and review migrations in development or CI. Production must only apply
+the committed migrations under `prisma/migrations`; never use `db push` or
+`migrate dev` against the production database.
 
-```bash
-pnpm --filter @noagent4u/api prisma:migrate --name init
-git add apps/api/prisma/migrations
-git commit -m "add initial database migration"
-```
-
-On the server, every release then applies only committed migrations:
+Before each release, take and verify a PostgreSQL backup. Then build the release
+images, run the one-shot migration target, and only start the application after
+that command succeeds:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
-docker compose --env-file .env.production -f docker-compose.production.yml exec api ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
+docker compose --env-file .env.production -f docker-compose.production.yml build migrate api worker web
+docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --no-build api worker web
 ```
 
-Confirm health locally on the VPS: `curl http://127.0.0.1:3001/api/v1/health`.
+`prisma migrate deploy` is idempotent, but a non-zero exit is a release blocker.
+Inspect the migration output and PostgreSQL logs before retrying; do not start a
+new application revision against an older schema.
+
+Confirm health locally on the VPS: `curl http://127.0.0.1:3001/health`.
 
 ## 3. Configure the Virtualmin reverse proxies
 
@@ -76,15 +79,16 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 ## 4. Operational checks and releases
 
-Set the web application's public API base URL to `https://api.noagent4u.com/api/v1` at build time once client API calls are added. Verify `https://api.noagent4u.com/docs`, login, invoice generation, and background delivery after every release.
+Verify `https://api.noagent4u.com/docs`, login, organization pages, invoice generation, and background delivery after every release.
 
 Deploy a release with:
 
 ```bash
 cd /opt/rentalos
 git pull --ff-only
-docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
-docker compose --env-file .env.production -f docker-compose.production.yml exec api ./node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma
+docker compose --env-file .env.production -f docker-compose.production.yml build migrate api worker web
+docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --no-build api worker web
 docker image prune -f
 ```
 

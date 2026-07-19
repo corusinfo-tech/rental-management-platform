@@ -109,6 +109,7 @@ model Invoice {
 model Payment {
   id                   String              @id @default(uuid())
   organizationId       String
+  propertyId           String?
   paymentNumber        String
   method               PaymentMethod
   purpose              PaymentPurpose      @default(INVOICE)
@@ -125,6 +126,7 @@ model Payment {
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  property             Property?           @relation(fields: [propertyId, organizationId], references: [id, organizationId], onDelete: Restrict)
   allocations          PaymentAllocation[]
   receipt              Receipt?
   refunds              Refund[]
@@ -133,6 +135,7 @@ model Payment {
   @@unique([organizationId, method, externalReference])
   @@index([organizationId, status, paidAt])
   @@index([organizationId, method, purpose])
+  @@index([organizationId, propertyId, paidAt])
   @@index([externalReference])
 }
 

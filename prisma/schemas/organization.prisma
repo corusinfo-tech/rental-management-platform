@@ -40,42 +40,43 @@ enum RiskLevel {
 }
 
 model Organization {
-  id                 String                       @id @default(uuid())
-  code               String                       @unique
-  name               String
-  legalName          String?
-  organizationType   OrganizationType             @default(LANDLORD)
-  registrationNumber String?
-  gstNumber          String?
-  panNumber          String?
-  email              String?
-  mobile             String?
-  website            String?
-  status             OrganizationStatus           @default(PENDING)
-  timezone           String                       @default("UTC")
-  currency           String                       @default("INR")
-  country            String                       @default("IN")
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
-  deletedAt          DateTime?
-  memberships        OrganizationMembership[]
-  privateRoles       Role[]                       @relation("OrganizationRoles")
-  outboxEvents       OutboxEvent[]
-  auditEvents        IdentityAuditEvent[]
-  sessions           Session[]
-  invitations        OrganizationInvitation[]
-  settings           OrganizationSettings?
-  approval           OrganizationApproval?
-  compliance         OrganizationCompliance?
-  properties         Property[]
-  leases             Lease[]
-  invoices           Invoice[]
-  creditNotes        CreditNote[]
-  invoiceSequence    OrganizationInvoiceSequence?
-  receiptSequence    OrganizationReceiptSequence?
-  payments           Payment[]
-  receipts           Receipt[]
-  refunds            Refund[]
+  id                   String                        @id @default(uuid())
+  code                 String                        @unique
+  name                 String
+  legalName            String?
+  organizationType     OrganizationType              @default(LANDLORD)
+  registrationNumber   String?
+  gstNumber            String?
+  panNumber            String?
+  email                String?
+  mobile               String?
+  website              String?
+  status               OrganizationStatus            @default(PENDING)
+  timezone             String                        @default("UTC")
+  currency             String                        @default("INR")
+  country              String                        @default("IN")
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  deletedAt            DateTime?
+  memberships          OrganizationMembership[]
+  privateRoles         Role[]                        @relation("OrganizationRoles")
+  outboxEvents         OutboxEvent[]
+  auditEvents          IdentityAuditEvent[]
+  sessions             Session[]
+  invitations          OrganizationInvitation[]
+  settings             OrganizationSettings?
+  approval             OrganizationApproval?
+  compliance           OrganizationCompliance?
+  properties           Property[]
+  leases               Lease[]
+  invoices             Invoice[]
+  creditNotes          CreditNote[]
+  invoiceSequence      OrganizationInvoiceSequence?
+  receiptSequence      OrganizationReceiptSequence?
+  payments             Payment[]
+  receipts             Receipt[]
+  refunds              Refund[]
+  portfolioAssignments PropertyPortfolioAssignment[]
 
   @@index([deletedAt])
   @@index([status, deletedAt])

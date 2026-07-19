@@ -1,17 +1,19 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InvoiceLineType, InvoiceStatus, PaymentMethod, PaymentPurpose, PaymentStatus, Prisma, SecurityDepositStatus } from '@prisma/client';
 import { ApplyAdvanceDto, CreatePaymentDto, CreateRefundDto, PaymentQueryDto } from './dto/payment.dto';
 import { PaymentRepository } from './payment.repository';
+import { PortfolioAccessService, PortfolioPermission } from '../identity/authorization/portfolio-access.service';
 
 @Injectable()
 export class PaymentService {
-  constructor(private readonly repository: PaymentRepository) {}
+  constructor(private readonly repository: PaymentRepository, private readonly access: PortfolioAccessService) {}
 
   async create(actorUserId: string, organizationId: string, input: CreatePaymentDto) {
-    await this.assertManager(actorUserId, organizationId);
+    const scope = await this.access.scope(actorUserId, organizationId, PortfolioPermission.PaymentManage);
     const purpose = input.purpose ?? PaymentPurpose.INVOICE;
     const invoiceIds = input.allocations.map((allocation) => allocation.invoiceId);
     if (new Set(invoiceIds).size !== invoiceIds.length) throw new BadRequestException('Each invoice may be allocated only once per payment');
+    const propertyId = await this.access.assertInvoices(scope, invoiceIds);
     if (input.method === PaymentMethod.ONLINE_PAYMENT_GATEWAY && !input.externalReference?.trim()) throw new BadRequestException('Online gateway payments require an external reference');
     const paymentAmount = new Prisma.Decimal(input.amount).toDecimalPlaces(2);
     const allocations = input.allocations.map((allocation) => ({ invoiceId: allocation.invoiceId, amount: new Prisma.Decimal(allocation.amount).toDecimalPlaces(2) }));
@@ -42,7 +44,7 @@ export class PaymentService {
       const paymentNumber = `PAY-${String(sequenceValue).padStart(8, '0')}`;
       const receiptNumber = `${sequence.prefix}-${String(sequenceValue).padStart(8, '0')}`;
       const payment = await tx.payment.create({
-        data: { organizationId, paymentNumber, method: input.method, purpose, currency: invoices[0].currency, amount: paymentAmount, allocatedAmount, unappliedAmount, externalReference: input.externalReference?.trim(), notes: input.notes?.trim(), paidAt: input.paidAt ? new Date(input.paidAt) : new Date() },
+        data: { organizationId, propertyId, paymentNumber, method: input.method, purpose, currency: invoices[0].currency, amount: paymentAmount, allocatedAmount, unappliedAmount, externalReference: input.externalReference?.trim(), notes: input.notes?.trim(), paidAt: input.paidAt ? new Date(input.paidAt) : new Date() },
       });
 
       for (const allocation of allocations) {
@@ -63,21 +65,21 @@ export class PaymentService {
   }
 
   async list(actorUserId: string, organizationId: string, query: PaymentQueryDto) {
-    await this.assertManager(actorUserId, organizationId);
-    const where: Prisma.PaymentWhereInput = { organizationId, ...(query.status ? { status: query.status } : {}), ...(query.method ? { method: query.method } : {}), ...(query.purpose ? { purpose: query.purpose } : {}), ...(query.search ? { OR: [{ paymentNumber: { contains: query.search.trim(), mode: 'insensitive' } }, { externalReference: { contains: query.search.trim(), mode: 'insensitive' } }] } : {}) };
+    const scope = await this.access.scope(actorUserId, organizationId, PortfolioPermission.PaymentRead);
+    const where: Prisma.PaymentWhereInput = { organizationId, ...this.access.paymentWhere(scope), ...(query.status ? { status: query.status } : {}), ...(query.method ? { method: query.method } : {}), ...(query.purpose ? { purpose: query.purpose } : {}), ...(query.search ? { OR: [{ paymentNumber: { contains: query.search.trim(), mode: 'insensitive' } }, { externalReference: { contains: query.search.trim(), mode: 'insensitive' } }] } : {}) };
     const [items, total] = await Promise.all([this.repository.list(where, (query.page - 1) * query.limit, query.limit), this.repository.count(where)]);
     return { items, pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } };
   }
 
   async find(actorUserId: string, organizationId: string, paymentId: string) {
-    await this.assertManager(actorUserId, organizationId);
+    await this.authorizeRead(actorUserId, organizationId, paymentId);
     const payment = await this.repository.findPayment(organizationId, paymentId);
     if (!payment) throw new NotFoundException('Payment not found');
     return payment;
   }
 
   async requestRefund(actorUserId: string, organizationId: string, paymentId: string, input: CreateRefundDto) {
-    await this.assertManager(actorUserId, organizationId);
+    await this.authorizeManage(actorUserId, organizationId, paymentId);
     const amount = new Prisma.Decimal(input.amount).toDecimalPlaces(2);
     return this.serializable(async (tx) => {
       const payment = await tx.payment.findFirst({ where: { id: paymentId, organizationId, status: PaymentStatus.COMPLETED } });
@@ -92,7 +94,10 @@ export class PaymentService {
   }
 
   async allocateAdvance(actorUserId: string, organizationId: string, paymentId: string, input: ApplyAdvanceDto) {
-    await this.assertManager(actorUserId, organizationId);
+    const scope = await this.access.scope(actorUserId, organizationId, PortfolioPermission.PaymentManage);
+    const paymentPropertyId = await this.access.assertPayment(scope, paymentId);
+    const invoicePropertyId = await this.access.assertInvoice(scope, input.invoiceId);
+    if (paymentPropertyId && paymentPropertyId !== invoicePropertyId) throw new ConflictException('Advance payment and invoice must belong to the same property');
     const amount = new Prisma.Decimal(input.amount).toDecimalPlaces(2);
     return this.serializable(async (tx) => {
       const payment = await tx.payment.findFirst({ where: { id: paymentId, organizationId, status: PaymentStatus.COMPLETED, purpose: PaymentPurpose.ADVANCE } });
@@ -104,7 +109,7 @@ export class PaymentService {
       if (invoice.currency !== payment.currency) throw new BadRequestException('Advance payment and invoice currencies do not match');
       const changed = await tx.invoice.updateMany({ where: { id: invoice.id, organizationId, deletedAt: null, status: { in: payableStatuses }, outstandingBalance: { gte: amount } }, data: { outstandingBalance: { decrement: amount } } });
       if (changed.count !== 1) throw new ConflictException('Allocation exceeds the current invoice outstanding balance');
-      await tx.payment.update({ where: { id: paymentId }, data: { allocatedAmount: { increment: amount }, unappliedAmount: { decrement: amount } } });
+      await tx.payment.update({ where: { id: paymentId }, data: { propertyId: payment.propertyId ?? invoicePropertyId, allocatedAmount: { increment: amount }, unappliedAmount: { decrement: amount } } });
       await tx.paymentAllocation.upsert({ where: { paymentId_invoiceId: { paymentId, invoiceId: invoice.id } }, create: { paymentId, invoiceId: invoice.id, amount }, update: { amount: { increment: amount } } });
       const updatedInvoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { outstandingBalance: true } });
       await tx.invoice.update({ where: { id: invoice.id }, data: { status: new Prisma.Decimal(updatedInvoice.outstandingBalance).isZero() ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID } });
@@ -114,7 +119,8 @@ export class PaymentService {
   }
 
   async recalculateInvoice(actorUserId: string, organizationId: string, invoiceId: string) {
-    await this.assertManager(actorUserId, organizationId);
+    const scope = await this.access.scope(actorUserId, organizationId, PortfolioPermission.PaymentManage);
+    await this.access.assertInvoice(scope, invoiceId);
     return this.serializable(async (tx) => {
       const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, organizationId, deletedAt: null } });
       if (!invoice) throw new NotFoundException('Invoice not found');
@@ -154,5 +160,6 @@ export class PaymentService {
     try { return await this.repository.transaction(callback); }
     catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') throw new ConflictException('Concurrent finance update detected; retry the request'); throw error; }
   }
-  private async assertManager(userId: string, organizationId: string) { if (!(await this.repository.managerMembership(userId, organizationId))) throw new ForbiddenException('Payment management permission is required'); }
+  private async authorizeRead(userId: string, organizationId: string, paymentId: string) { const scope = await this.access.scope(userId, organizationId, PortfolioPermission.PaymentRead); await this.access.assertPayment(scope, paymentId); }
+  private async authorizeManage(userId: string, organizationId: string, paymentId: string) { const scope = await this.access.scope(userId, organizationId, PortfolioPermission.PaymentManage); await this.access.assertPayment(scope, paymentId); }
 }

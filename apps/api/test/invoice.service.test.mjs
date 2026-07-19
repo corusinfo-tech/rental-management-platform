@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InvoiceService } from '../dist/finance/invoice.service.js';
 
+const access = { scope: async () => ({ organizationWide: true, propertyIds: [] }), assertSchedule: async () => 'property-1', assertInvoice: async () => 'property-1', invoiceWhere: () => ({}) };
+const service = (repo) => new InvoiceService(repo, access);
+
 const schedule = {
   id: 'schedule-1', totalDue: 25000, dueAt: new Date('2026-08-05T00:00:00.000Z'),
   periodStartsAt: new Date('2026-08-01T00:00:00.000Z'), periodEndsAt: new Date('2026-09-01T00:00:00.000Z'),
@@ -36,7 +39,7 @@ function repository(overrides = {}) {
 
 test('generates the mandatory rent line from a rent schedule', async () => {
   const repo = repository();
-  const result = await new InvoiceService(repo).create('actor-1', 'organization-1', { rentScheduleId: 'schedule-1', additionalLines: [{ type: 'PARKING', description: 'Parking', unitAmount: 1000 }] });
+  const result = await service(repo).create('actor-1', 'organization-1', { rentScheduleId: 'schedule-1', additionalLines: [{ type: 'PARKING', description: 'Parking', unitAmount: 1000 }] });
   assert.equal(result.invoiceNumber, 'INV-00000001');
   assert.equal(result.rentScheduleId, 'schedule-1');
   assert.equal(result.lines[0].type, 'RENT');
@@ -47,23 +50,23 @@ test('generates the mandatory rent line from a rent schedule', async () => {
 
 test('rejects duplicate invoice generation for the same rent schedule', async () => {
   const repo = repository({ findSchedule: async () => ({ ...schedule, invoice: { id: 'invoice-existing' } }) });
-  await assert.rejects(() => new InvoiceService(repo).create('actor-1', 'organization-1', { rentScheduleId: 'schedule-1' }));
+  await assert.rejects(() => service(repo).create('actor-1', 'organization-1', { rentScheduleId: 'schedule-1' }));
 });
 
 test('issued credit note reduces outstanding balance in the same transaction', async () => {
   const repo = repository();
-  const result = await new InvoiceService(repo).createCreditNote('actor-1', 'organization-1', 'invoice-1', { status: 'ISSUED', amount: 1000, reason: 'Rent adjustment' });
+  const result = await service(repo).createCreditNote('actor-1', 'organization-1', 'invoice-1', { status: 'ISSUED', amount: 1000, reason: 'Rent adjustment' });
   assert.equal(result.creditNoteNumber, 'CN-INV-00000001-001');
   assert.equal(result.status, 'ISSUED');
   assert.equal(repo.calls[0][3], 'invoice.credit_note.created');
 });
 
 test('rejects an issued credit note above the outstanding balance', async () => {
-  await assert.rejects(() => new InvoiceService(repository()).createCreditNote('actor-1', 'organization-1', 'invoice-1', { status: 'ISSUED', amount: 26001, reason: 'Invalid' }));
+  await assert.rejects(() => service(repository()).createCreditNote('actor-1', 'organization-1', 'invoice-1', { status: 'ISSUED', amount: 26001, reason: 'Invalid' }));
 });
 
 test('archives an invoice while retaining its prior status', async () => {
-  const result = await new InvoiceService(repository()).archive('actor-1', 'organization-1', 'invoice-1');
+  const result = await service(repository()).archive('actor-1', 'organization-1', 'invoice-1');
   assert.equal(result.status, 'ARCHIVED');
   assert.equal(result.archivedFromStatus, 'ISSUED');
   assert.ok(result.deletedAt instanceof Date);

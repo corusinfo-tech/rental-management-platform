@@ -25,6 +25,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    restart: 'no'
+    profiles: ['release']
+    env_file: .env.production
+    depends_on:
+      postgres: { condition: service_healthy }
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     restart: unless-stopped

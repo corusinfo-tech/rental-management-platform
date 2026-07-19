@@ -10,8 +10,10 @@ export class InvitationRepository {
     return this.prisma.$transaction(callback, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
-  ownerMembership(userId: string, organizationId: string, transaction: Prisma.TransactionClient) {
-    return transaction.organizationMembership.findFirst({ where: { organizationId, isOwner: true, status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } } } });
+  membershipWithPermission(userId: string, organizationId: string, permissionCode: string, transaction: Prisma.TransactionClient) {
+    return transaction.organizationMembership.findFirst({
+      where: { organizationId, status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } }, roles: { some: { role: { code: { notIn: ['SUPER_ADMIN', 'OWNER', 'LANDLORD'] }, deletedAt: null, permissions: { some: { permission: { code: permissionCode, deletedAt: null } } } } } } },
+    });
   }
 
   organizationIsActive(organizationId: string, transaction: Prisma.TransactionClient) {
@@ -30,8 +32,22 @@ export class InvitationRepository {
     return transaction.organizationInvitation.updateMany({ where: { organizationId, email, status: InvitationStatus.PENDING, expiresAt: { lte: new Date() } }, data: { status: InvitationStatus.EXPIRED } });
   }
 
-  create(input: { id: string; organizationId: string; email: string; roleId: string; invitedByUserId: string; verificationId: string; expiresAt: Date }, transaction: Prisma.TransactionClient) {
+  create(input: { id: string; organizationId: string; email: string; roleId: string; invitedByUserId: string; verificationId: string; leasePartyId?: string; expiresAt: Date }, transaction: Prisma.TransactionClient) {
     return transaction.organizationInvitation.create({ data: input });
+  }
+
+  findLinkableLeaseParty(organizationId: string, leasePartyId: string, transaction: Prisma.TransactionClient) {
+    return transaction.leaseParty.findFirst({
+      where: { id: leasePartyId, role: { in: ['TENANT', 'CO_TENANT'] }, lease: { organizationId, deletedAt: null } },
+      select: { id: true, email: true, personId: true },
+    });
+  }
+
+  linkLeaseParty(organizationId: string, leasePartyId: string, personId: string, verificationId: string, transaction: Prisma.TransactionClient) {
+    return transaction.leaseParty.updateMany({
+      where: { id: leasePartyId, lease: { organizationId, deletedAt: null }, OR: [{ personId: null }, { personId }] },
+      data: { personId, linkedAt: new Date(), linkVerificationId: verificationId },
+    });
   }
 
   findByIdForOrganization(id: string, organizationId: string, transaction: Prisma.TransactionClient) {
@@ -43,7 +59,7 @@ export class InvitationRepository {
   }
 
   findByVerificationId(verificationId: string, transaction: Prisma.TransactionClient) {
-    return transaction.organizationInvitation.findUnique({ where: { verificationId }, include: { role: true } });
+    return transaction.organizationInvitation.findUnique({ where: { verificationId }, include: { role: true, leaseParty: true } });
   }
 
   accept(id: string, expectedVersion: number, transaction: Prisma.TransactionClient) {

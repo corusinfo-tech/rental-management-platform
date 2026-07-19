@@ -95,7 +95,7 @@ export class OrganizationRoleService {
   }
 
   private async assertOwner(userId: string, organizationId: string, transaction: Prisma.TransactionClient) {
-    if (!(await this.repository.ownerMembership(userId, organizationId, transaction))) throw new ForbiddenException('Only organization owners may manage roles');
+    if (!(await this.repository.ownerMembership(userId, organizationId, transaction))) throw new ForbiddenException('Organization role-management permission is required');
   }
 
   private async requireCustom(roleId: string, organizationId: string, transaction: Prisma.TransactionClient) {

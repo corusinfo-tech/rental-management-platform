@@ -31,6 +31,12 @@ RUN SOURCE_CLIENT="$(readlink -f /app/node_modules/@prisma/client)" && \
     rm -rf "$DEST_NODE_MODULES/.prisma" && \
     cp -a "$SOURCE_NODE_MODULES/.prisma" "$DEST_NODE_MODULES/.prisma"
 
+# Ephemeral release target. This keeps the Prisma CLI and committed migration
+# files out of the long-running API image while still providing a reproducible
+# migration runner built from the exact same source revision as the API.
+FROM build AS migrate
+CMD ["pnpm", "exec", "prisma", "migrate", "deploy", "--schema", "prisma/schemas"]
+
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production

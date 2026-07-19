@@ -21,6 +21,9 @@ import { SmsVerificationService } from './sms-verification/sms-verification.serv
 import { WhatsAppVerificationService } from './whatsapp-verification/whatsapp-verification.service';
 import { AuthenticationThrottleService } from './security/authentication-throttle.service';
 import { IdentityService } from './services/identity.service';
+import { PortfolioAccessService } from './authorization/portfolio-access.service';
+import { PlatformPrincipalGuard } from './authorization/platform-principal.guard';
+import { TenantAccessService } from './authorization/tenant-access.service';
 
 @Module({
   imports: [
@@ -56,7 +59,10 @@ import { IdentityService } from './services/identity.service';
     CurrentMembershipResolver,
     PermissionGuard,
     PolicyGuard,
+    PortfolioAccessService,
+    PlatformPrincipalGuard,
+    TenantAccessService,
   ],
-  exports: [JwtModule, IdentityRepository, VerificationEngine, AccessTokenGuard, OrganizationResolver, RouteOrganizationContextGuard, CurrentMembershipResolver, PermissionGuard, PolicyGuard],
+  exports: [JwtModule, IdentityRepository, VerificationEngine, AccessTokenGuard, OrganizationResolver, RouteOrganizationContextGuard, CurrentMembershipResolver, PermissionGuard, PolicyGuard, PortfolioAccessService, PlatformPrincipalGuard, TenantAccessService],
 })
 export class IdentityModule {}

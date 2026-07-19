@@ -56,6 +56,10 @@ export class IdentityRepository {
     return client.organization.create({ data: input });
   }
 
+  async createRegistrationOrganizationSettings(organizationId: string, client: Prisma.TransactionClient) {
+    return client.organizationSettings.create({ data: { organizationId } });
+  }
+
   async createOrganizationApproval(organizationId: string, client: Prisma.TransactionClient) {
     return client.organizationApproval.create({ data: { organizationId } });
   }
@@ -81,7 +85,14 @@ export class IdentityRepository {
   async findAcceptedOrganizationInvitations(email: string, client: Prisma.TransactionClient) {
     return client.organizationInvitation.findMany({
       where: { email, status: 'ACCEPTED', role: { deletedAt: null } },
-      select: { id: true, organizationId: true, roleId: true, verificationId: true },
+      select: { id: true, organizationId: true, roleId: true, verificationId: true, leasePartyId: true },
+    });
+  }
+
+  async linkLeasePartyFromVerifiedInvitation(organizationId: string, leasePartyId: string, personId: string, verificationId: string, client: Prisma.TransactionClient) {
+    return client.leaseParty.updateMany({
+      where: { id: leasePartyId, lease: { organizationId, deletedAt: null }, OR: [{ personId: null }, { personId }] },
+      data: { personId, linkedAt: new Date(), linkVerificationId: verificationId },
     });
   }
 
@@ -352,6 +363,13 @@ export class IdentityRepository {
           include: { role: { include: { permissions: { include: { permission: true } } } } },
         },
       },
+    });
+  }
+
+  async findActivePlatformPrincipal(userId: string) {
+    return this.prisma.platformPrincipal.findFirst({
+      where: { userId, role: 'SUPER_ADMIN', status: 'ACTIVE', deletedAt: null, user: { deletedAt: null, status: UserStatus.ACTIVE } },
+      select: { id: true, userId: true, role: true },
     });
   }
 

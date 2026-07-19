@@ -29,9 +29,11 @@ export class CurrentMembershipResolver {
     const context = {
       id: membership.id,
       organizationId: membership.organizationId,
-      permissionCodes: membership.roles.flatMap((membershipRole) =>
-        membershipRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
-      ),
+      permissionCodes: membership.roles
+        .filter((membershipRole) => !['SUPER_ADMIN', 'OWNER', 'LANDLORD'].includes(membershipRole.role.code))
+        .flatMap((membershipRole) =>
+          membershipRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
+        ),
     };
     request.membership = context;
     return context;

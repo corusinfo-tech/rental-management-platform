@@ -9,7 +9,7 @@
     "prisma:seed": "prisma db seed --schema ../../prisma/schemas",
     "lint": "eslint ../../.eslintrc.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test ../../tests/identity-database.test.mjs",
+    "test": "node --test --test-concurrency=1 ../../tests/*database.test.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

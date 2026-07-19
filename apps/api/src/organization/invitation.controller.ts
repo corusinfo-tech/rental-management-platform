@@ -2,6 +2,9 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, 
 import { ApiAcceptedResponse, ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { RequestContext } from '../core/request/request-context';
 import { AccessTokenGuard } from '../identity/authorization/access-token.guard';
+import { PermissionGuard } from '../identity/authorization/permission.guard';
+import { RouteOrganizationContextGuard } from '../identity/authorization/route-organization-context.guard';
+import { RequirePermissions } from '../identity/authorization/require-permissions.decorator';
 import type { IdentityRequest } from '../identity/authorization/request-context';
 import { CreateOrganizationInvitationDto, InvitationResponseDto, InvitationTokenDto, OrganizationMemberResponseDto, RevokeInvitationDto } from './dto/invitation.dto';
 import { InvitationService } from './invitation.service';
@@ -12,7 +15,8 @@ export class InvitationController {
   constructor(private readonly invitations: InvitationService) {}
 
   @Post('organizations/:id/invitations')
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, RouteOrganizationContextGuard, PermissionGuard)
+  @RequirePermissions('organization.members.manage')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create an organization invitation; only an active organization owner may invite' })
   @ApiCreatedResponse({ type: InvitationResponseDto })
@@ -21,7 +25,8 @@ export class InvitationController {
   }
 
   @Get('organizations/:id/members')
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, RouteOrganizationContextGuard, PermissionGuard)
+  @RequirePermissions('organization.members.read')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List organization members; only an active organization owner may view members' })
   @ApiOkResponse({ type: OrganizationMemberResponseDto, isArray: true })

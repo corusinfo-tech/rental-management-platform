@@ -19,10 +19,16 @@ export class InvitationService {
     const email = input.email.trim().toLowerCase();
     try {
       return await this.repository.transaction(async (transaction) => {
-        await this.assertOwner(actorUserId, organizationId, transaction);
+        await this.assertPermission(actorUserId, organizationId, 'organization.members.manage', transaction);
         if (!(await this.repository.organizationIsActive(organizationId, transaction))) throw new ConflictException('Suspended or inactive organizations cannot invite members');
         const role = await this.repository.findInvitableRole(organizationId, input.roleId, transaction);
         if (!role) throw new BadRequestException('Role is not available for this organization');
+        if (input.leasePartyId) {
+          if (role.code !== 'TENANT') throw new BadRequestException('Lease-party linkage requires the TENANT role');
+          const party = await this.repository.findLinkableLeaseParty(organizationId, input.leasePartyId, transaction);
+          if (!party || party.personId) throw new ConflictException('Lease party is unavailable for invitation linkage');
+          if (party.email && party.email.trim().toLowerCase() !== email) throw new BadRequestException('Invitation destination does not match the selected lease party contact');
+        }
         await this.repository.expirePending(organizationId, email, transaction);
         if (await this.repository.findPending(organizationId, email, transaction)) throw new ConflictException('A pending invitation already exists');
 
@@ -38,7 +44,7 @@ export class InvitationService {
           correlationId,
           transaction,
         });
-        const invitation = await this.repository.create({ id: invitationId, organizationId, email, roleId: role.id, invitedByUserId: actorUserId, verificationId: verification.id, expiresAt: verification.expiresAt }, transaction);
+        const invitation = await this.repository.create({ id: invitationId, organizationId, email, roleId: role.id, invitedByUserId: actorUserId, verificationId: verification.id, leasePartyId: input.leasePartyId, expiresAt: verification.expiresAt }, transaction);
         const payload = { invitationId, organizationId, verificationId: verification.id, roleId: role.id, correlationId: correlationId ?? null };
         await this.repository.audit(actorUserId, undefined, 'organization.invitation.created', payload, transaction);
         await this.repository.outbox(OrganizationEvent.InvitationCreated, 'OrganizationInvitation', invitationId, organizationId, payload, transaction);
@@ -73,6 +79,9 @@ export class InvitationService {
             ? await this.repository.activateMembership(existing.id, transaction)
             : await this.repository.createMembership(invitation.organizationId, user.personId, transaction);
           await this.repository.assignRole(membership.id, invitation.roleId, transaction);
+          if (invitation.leasePartyId && (await this.repository.linkLeaseParty(invitation.organizationId, invitation.leasePartyId, user.personId, invitation.verificationId, transaction)).count !== 1) {
+            throw new ConflictException('Lease party is already linked to another verified person');
+          }
           const eventType = existing ? OrganizationEvent.MembershipUpdated : OrganizationEvent.MembershipCreated;
           await this.repository.audit(undefined, user.id, existing ? 'organization.membership.updated' : 'organization.membership.created', { ...payload, membershipId: membership.id }, transaction);
           await this.repository.outbox(eventType, 'OrganizationMembership', membership.id, invitation.organizationId, { ...payload, membershipId: membership.id, userId: user.id }, transaction);
@@ -110,7 +119,7 @@ export class InvitationService {
     return this.repository.transaction(async (transaction) => {
       const invitation = await this.repository.findById(invitationId, transaction);
       if (!invitation) throw new NotFoundException();
-      await this.assertOwner(actorUserId, invitation.organizationId, transaction);
+      await this.assertPermission(actorUserId, invitation.organizationId, 'organization.members.manage', transaction);
       if (invitation.version !== expectedVersion || (await this.repository.revoke(invitationId, invitation.organizationId, expectedVersion, transaction)).count !== 1) throw new ConflictException('Invitation is no longer pending');
       await this.verificationEngine.revoke(invitation.verificationId, transaction);
       const payload = { invitationId, organizationId: invitation.organizationId, verificationId: invitation.verificationId, correlationId: correlationId ?? null };
@@ -121,7 +130,7 @@ export class InvitationService {
   }
 
   async members(actorUserId: string, organizationId: string): Promise<OrganizationMemberResponseDto[]> {
-    await this.repository.transaction((transaction) => this.assertOwner(actorUserId, organizationId, transaction));
+    await this.repository.transaction((transaction) => this.assertPermission(actorUserId, organizationId, 'organization.members.read', transaction));
     return (await this.repository.listMembers(organizationId)).flatMap((membership) => {
       const user = membership.person.user;
       if (!user || user.deletedAt) return [];
@@ -129,8 +138,8 @@ export class InvitationService {
     });
   }
 
-  private async assertOwner(userId: string, organizationId: string, transaction: Prisma.TransactionClient) {
-    if (!(await this.repository.ownerMembership(userId, organizationId, transaction))) throw new ForbiddenException('Only organization owners may manage invitations');
+  private async assertPermission(userId: string, organizationId: string, permissionCode: string, transaction: Prisma.TransactionClient) {
+    if (!(await this.repository.membershipWithPermission(userId, organizationId, permissionCode, transaction))) throw new ForbiddenException('Organization membership permission is required');
   }
 
   private secretFor(verificationId: string, token: string): string | undefined {
@@ -140,8 +149,8 @@ export class InvitationService {
     return /^[A-Za-z0-9_-]{32,}$/.test(secret) ? secret : undefined;
   }
 
-  private response(invitation: { id: string; organizationId: string; email: string; roleId: string; verificationId: string; status: InvitationStatus; expiresAt: Date; acceptedAt: Date | null; declinedAt: Date | null; revokedAt: Date | null; createdAt: Date; updatedAt: Date; version: number }): InvitationResponseDto {
-    return { id: invitation.id, organizationId: invitation.organizationId, email: invitation.email, roleId: invitation.roleId, verificationId: invitation.verificationId, status: invitation.status, expiresAt: invitation.expiresAt, acceptedAt: invitation.acceptedAt, declinedAt: invitation.declinedAt, revokedAt: invitation.revokedAt, createdAt: invitation.createdAt, updatedAt: invitation.updatedAt, version: invitation.version };
+  private response(invitation: { id: string; organizationId: string; email: string; roleId: string; verificationId: string; leasePartyId: string | null; status: InvitationStatus; expiresAt: Date; acceptedAt: Date | null; declinedAt: Date | null; revokedAt: Date | null; createdAt: Date; updatedAt: Date; version: number }): InvitationResponseDto {
+    return { id: invitation.id, organizationId: invitation.organizationId, email: invitation.email, roleId: invitation.roleId, verificationId: invitation.verificationId, leasePartyId: invitation.leasePartyId, status: invitation.status, expiresAt: invitation.expiresAt, acceptedAt: invitation.acceptedAt, declinedAt: invitation.declinedAt, revokedAt: invitation.revokedAt, createdAt: invitation.createdAt, updatedAt: invitation.updatedAt, version: invitation.version };
   }
 
   private isUniqueViolation(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002'; }

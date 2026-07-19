@@ -10,18 +10,33 @@ const permissions = [
   ['organization.roles.read', 'Read organization roles'],
   ['organization.roles.manage', 'Manage organization roles'],
   ['organization.settings.manage', 'Manage organization settings'],
+  ['organization.settings.read', 'Read organization settings'],
+  ['portfolio.access.all', 'Access every property in the organization'],
+  ['property.read', 'Read assigned properties'],
+  ['property.manage', 'Manage assigned properties'],
+  ['lease.read', 'Read leases in the assigned portfolio'],
+  ['lease.manage', 'Manage leases in the assigned portfolio'],
+  ['invoice.read', 'Read invoices in the assigned portfolio'],
+  ['invoice.manage', 'Manage invoices in the assigned portfolio'],
+  ['payment.read', 'Read payments in the assigned portfolio'],
+  ['payment.manage', 'Manage payments in the assigned portfolio'],
 ];
 
+const organizationWide = permissions.map(([code]) => code);
+const portfolioRead = ['identity.profile.read', 'property.read', 'lease.read', 'invoice.read', 'payment.read'];
+
 const roles = [
-  ['SUPER_ADMIN', 'Platform Super Administrator', permissions.map(([code]) => code)],
-  ['OWNER', 'Owner', permissions.map(([code]) => code)],
-  ['ADMIN', 'Administrator', permissions.map(([code]) => code)],
-  ['PROPERTY_MANAGER', 'Property Manager', ['identity.profile.read', 'organization.members.read']],
-  ['FINANCE', 'Finance', ['identity.profile.read']],
+  ['SUPER_ADMIN', 'Legacy Platform Super Administrator', []],
+  ['OWNER', 'Legacy Owner', []],
+  ['ORG_PROPRIETOR', 'Organization Proprietor', organizationWide],
+  ['ASSET_OWNER', 'Managed Property Asset Owner', portfolioRead],
+  ['ADMIN', 'Administrator', organizationWide],
+  ['PROPERTY_MANAGER', 'Property Manager', ['identity.profile.read', 'organization.members.read', 'property.read', 'property.manage', 'lease.read', 'lease.manage', 'invoice.read', 'payment.read']],
+  ['FINANCE', 'Finance', ['identity.profile.read', 'invoice.read', 'invoice.manage', 'payment.read', 'payment.manage']],
   ['MAINTENANCE', 'Maintenance', ['identity.profile.read']],
   ['SUPPORT', 'Support', ['identity.profile.read']],
-  ['VIEWER', 'Viewer', ['identity.profile.read']],
-  ['LANDLORD', 'Landlord', ['identity.profile.read', 'identity.profile.write', 'organization.members.read', 'organization.roles.manage', 'organization.settings.manage']],
+  ['VIEWER', 'Viewer', portfolioRead],
+  ['LANDLORD', 'Legacy Landlord', []],
   ['AGENT', 'Agent', ['identity.profile.read', 'organization.members.read']],
   ['TENANT', 'Tenant', ['identity.profile.read', 'identity.profile.write']],
 ];

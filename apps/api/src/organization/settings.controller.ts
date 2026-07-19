@@ -12,7 +12,7 @@ import { OrganizationSettingsService } from './settings.service';
 @Controller({ path: 'organizations', version: '1' })
 export class OrganizationSettingsController {
   constructor(private readonly settings: OrganizationSettingsService) {}
-  @Get(':id/settings') @ApiOperation({ summary: 'Get settings for an organization owned or administered by the caller' }) @ApiOkResponse({ type: OrganizationSettingsResponseDto })
+  @Get(':id/settings') @RequirePermissions('organization.settings.read') @ApiOperation({ summary: 'Get settings for an organization owned or administered by the caller' }) @ApiOkResponse({ type: OrganizationSettingsResponseDto })
   get(@Param('id') organizationId: string, @Req() request: IdentityRequest) { return this.settings.get(request.identity!.sub, organizationId); }
   @Patch(':id/settings') @ApiOperation({ summary: 'Update settings for an organization owned or administered by the caller' }) @ApiOkResponse({ type: OrganizationSettingsResponseDto })
   update(@Param('id') organizationId: string, @Body() dto: UpdateOrganizationSettingsDto, @Req() request: IdentityRequest) { return this.settings.update(request.identity!.sub, organizationId, dto); }

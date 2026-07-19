@@ -193,17 +193,25 @@ model LeaseTerms {
 }
 
 model LeaseParty {
-  id        String         @id @default(uuid())
-  leaseId   String
-  role      LeasePartyRole
-  name      String
-  email     String?
-  mobile    String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  lease     Lease          @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+  id                 String                   @id @default(uuid())
+  leaseId            String
+  personId           String?
+  role               LeasePartyRole
+  name               String
+  email              String?
+  mobile             String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  linkedAt           DateTime?
+  linkVerificationId String?
+  lease              Lease                    @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+  person             Person?                  @relation(fields: [personId], references: [id], onDelete: Restrict)
+  linkVerification   Verification?            @relation("LeasePartyLinkVerification", fields: [linkVerificationId], references: [id], onDelete: Restrict)
+  invitations        OrganizationInvitation[]
 
+  @@unique([linkVerificationId])
   @@index([leaseId, role])
+  @@index([personId, role])
 }
 
 model LeaseDocument {

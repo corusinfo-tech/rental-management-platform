@@ -68,40 +68,44 @@ enum VerificationDeliveryEnvelopeStatus {
 }
 
 model Person {
-  id          String                   @id @default(uuid())
-  firstName   String
-  lastName    String
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
-  deletedAt   DateTime?
-  user        User?
-  memberships OrganizationMembership[]
+  id           String                   @id @default(uuid())
+  firstName    String
+  lastName     String
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  deletedAt    DateTime?
+  user         User?
+  memberships  OrganizationMembership[]
+  leaseParties LeaseParty[]
 
   @@index([deletedAt])
 }
 
 model User {
-  id                            String                   @id @default(uuid())
-  personId                      String                   @unique
-  email                         String                   @unique
-  mobile                        String?                  @unique
+  id                            String                        @id @default(uuid())
+  personId                      String                        @unique
+  email                         String                        @unique
+  mobile                        String?                       @unique
   passwordHash                  String
-  status                        UserStatus               @default(REGISTERED)
+  status                        UserStatus                    @default(REGISTERED)
   emailVerifiedAt               DateTime?
   lastLoginAt                   DateTime?
-  createdAt                     DateTime                 @default(now())
-  updatedAt                     DateTime                 @updatedAt
+  createdAt                     DateTime                      @default(now())
+  updatedAt                     DateTime                      @updatedAt
   deletedAt                     DateTime?
-  person                        Person                   @relation(fields: [personId], references: [id], onDelete: Restrict)
+  person                        Person                        @relation(fields: [personId], references: [id], onDelete: Restrict)
   sessions                      Session[]
   verifications                 Verification[]
-  auditEventsAsActor            IdentityAuditEvent[]     @relation("AuditActor")
-  auditEventsAsSubject          IdentityAuditEvent[]     @relation("AuditSubject")
-  invitationsSent               OrganizationInvitation[] @relation("InvitationInviter")
-  assignedMembershipRoles       MembershipRole[]         @relation("MembershipRoleAssigner")
-  organizationApprovalsReviewed OrganizationApproval[]   @relation("OrganizationApprovalReviewer")
-  ownedProperties               Property[]               @relation("PropertyOwner")
-  propertyOwnerships            PropertyOwnership[]      @relation("PropertyOwnershipUser")
+  auditEventsAsActor            IdentityAuditEvent[]          @relation("AuditActor")
+  auditEventsAsSubject          IdentityAuditEvent[]          @relation("AuditSubject")
+  invitationsSent               OrganizationInvitation[]      @relation("InvitationInviter")
+  assignedMembershipRoles       MembershipRole[]              @relation("MembershipRoleAssigner")
+  organizationApprovalsReviewed OrganizationApproval[]        @relation("OrganizationApprovalReviewer")
+  ownedProperties               Property[]                    @relation("PropertyOwner")
+  propertyOwnerships            PropertyOwnership[]           @relation("PropertyOwnershipUser")
+  createdProperties             Property[]                    @relation("PropertyCreator")
+  assignedPortfolioScopes       PropertyPortfolioAssignment[] @relation("PortfolioAssignmentAssigner")
+  platformPrincipal             PlatformPrincipal?
 
   @@index([status])
   @@index([deletedAt])
@@ -150,21 +154,23 @@ model RolePermission {
 }
 
 model OrganizationMembership {
-  id             String           @id @default(uuid())
-  organizationId String
-  personId       String
-  status         MembershipStatus @default(INVITED)
-  isOwner        Boolean          @default(false)
-  joinedAt       DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  deletedAt      DateTime?
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  person         Person           @relation(fields: [personId], references: [id], onDelete: Restrict)
-  roles          MembershipRole[]
-  sessions       Session[]
+  id                   String                        @id @default(uuid())
+  organizationId       String
+  personId             String
+  status               MembershipStatus              @default(INVITED)
+  isOwner              Boolean                       @default(false)
+  joinedAt             DateTime?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  deletedAt            DateTime?
+  organization         Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person               Person                        @relation(fields: [personId], references: [id], onDelete: Restrict)
+  roles                MembershipRole[]
+  sessions             Session[]
+  portfolioAssignments PropertyPortfolioAssignment[]
 
   @@unique([organizationId, personId])
+  @@unique([id, organizationId])
   @@index([organizationId, status])
   @@index([personId, status])
   @@index([deletedAt])
@@ -234,6 +240,7 @@ model Verification {
   user               User?                         @relation(fields: [userId], references: [id], onDelete: Restrict)
   deliveryEnvelope   VerificationDeliveryEnvelope?
   invitation         OrganizationInvitation?
+  linkedLeaseParty   LeaseParty?                   @relation("LeasePartyLinkVerification")
 
   @@index([userId, purpose, status, expiresAt])
   @@index([subjectType, subjectReferenceId, channel, purpose, status, expiresAt])
@@ -247,6 +254,7 @@ model OrganizationInvitation {
   roleId          String
   invitedByUserId String
   verificationId  String           @unique
+  leasePartyId    String?
   status          InvitationStatus @default(PENDING)
   expiresAt       DateTime
   acceptedAt      DateTime?
@@ -259,11 +267,13 @@ model OrganizationInvitation {
   role            Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
   invitedBy       User             @relation("InvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Restrict)
   verification    Verification     @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+  leaseParty      LeaseParty?      @relation(fields: [leasePartyId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, status, expiresAt])
   @@index([email, status, expiresAt])
   @@index([roleId])
   @@index([invitedByUserId, createdAt])
+  @@index([leasePartyId, status])
 }
 
 model VerificationDeliveryEnvelope {

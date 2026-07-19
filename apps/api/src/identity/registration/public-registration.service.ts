@@ -9,7 +9,7 @@ import { VerificationEngine } from '../verification-engine/verification-engine.s
 
 const REGISTRATION_RULES = {
   [PublicRegistrationType.TENANT]: { status: UserStatus.PENDING_EMAIL, roleCode: 'TENANT' },
-  [PublicRegistrationType.LANDLORD]: { status: UserStatus.PENDING_REVIEW, roleCode: 'LANDLORD' },
+  [PublicRegistrationType.LANDLORD]: { status: UserStatus.PENDING_REVIEW, roleCode: 'ORG_PROPRIETOR' },
 } as const;
 
 const ACCEPTED_RESPONSE: RegistrationAcceptedDto = { accepted: true };
@@ -61,6 +61,7 @@ export class PublicRegistrationService {
             )
           : undefined;
         if (organization && role) {
+          await this.repository.createRegistrationOrganizationSettings(organization.id, transaction);
           const membership = await this.repository.createActiveMembership(
             { organizationId: organization.id, personId: user.personId, isOwner: true },
             transaction,
@@ -79,6 +80,9 @@ export class PublicRegistrationService {
             ? await this.repository.activateMembership(existing.id, transaction)
             : await this.repository.createActiveMembership({ organizationId: invitation.organizationId, personId: user.personId }, transaction);
           await this.repository.assignRoleToMembershipIfMissing({ membershipId: membership.id, roleId: invitation.roleId }, transaction);
+          if (invitation.leasePartyId && (await this.repository.linkLeasePartyFromVerifiedInvitation(invitation.organizationId, invitation.leasePartyId, user.personId, invitation.verificationId, transaction)).count !== 1) {
+            throw new InternalServerErrorException('Verified lease-party invitation cannot be linked safely');
+          }
           const payload = { invitationId: invitation.id, verificationId: invitation.verificationId, membershipId: membership.id, userId: user.id, organizationId: invitation.organizationId };
           await this.repository.createAuditEvent({ subjectUserId: user.id, action: existing ? 'organization.membership.updated' : 'organization.membership.created', metadata: payload }, transaction);
           await this.repository.createOutboxEvent({ eventType: existing ? 'MembershipUpdated' : 'MembershipCreated', aggregateType: 'OrganizationMembership', aggregateId: membership.id, organizationId: invitation.organizationId, payload }, transaction);
