@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PaymentService } from '../dist/finance/payment.service.js';
 
+const access = { scope: async () => ({ organizationWide: true, propertyIds: [] }), assertInvoices: async () => 'property-1', assertInvoice: async () => 'property-1', assertPayment: async () => 'property-1', paymentWhere: () => ({}) };
+const service = (repo) => new PaymentService(repo, access);
+
 function invoice(id, outstanding = 10000, lines = [{ type: 'RENT', lineTotal: 10000 }]) {
   return { id, organizationId: 'organization-1', invoiceNumber: `INV-${id}`, status: 'ISSUED', currency: 'INR', total: outstanding, creditTotal: 0, outstandingBalance: outstanding, deletedAt: null, lines, rentSchedule: { calendar: { id: `calendar-${id}`, securityDeposit: null } } };
 }
@@ -58,7 +61,7 @@ function repository(sourceInvoices = [invoice('invoice-1')], overrides = {}) {
 
 test('partial payment updates invoice balance, marks PARTIALLY_PAID, and creates a receipt', async () => {
   const repo = repository();
-  const result = await new PaymentService(repo).create('actor-1', 'organization-1', { method: 'UPI', amount: 4000, allocations: [{ invoiceId: 'invoice-1', amount: 4000 }] });
+  const result = await service(repo).create('actor-1', 'organization-1', { method: 'UPI', amount: 4000, allocations: [{ invoiceId: 'invoice-1', amount: 4000 }] });
   assert.equal(Number(repo.invoices.get('invoice-1').outstandingBalance), 6000);
   assert.equal(repo.invoices.get('invoice-1').status, 'PARTIALLY_PAID');
   assert.equal(result.receipt.receiptNumber, 'RCT-00000001');
@@ -67,23 +70,23 @@ test('partial payment updates invoice balance, marks PARTIALLY_PAID, and creates
 
 test('one payment allocates to multiple invoices and marks both PAID', async () => {
   const repo = repository([invoice('invoice-1', 10000), invoice('invoice-2', 5000)]);
-  const result = await new PaymentService(repo).create('actor-1', 'organization-1', { method: 'BANK_TRANSFER', amount: 15000, allocations: [{ invoiceId: 'invoice-1', amount: 10000 }, { invoiceId: 'invoice-2', amount: 5000 }] });
+  const result = await service(repo).create('actor-1', 'organization-1', { method: 'BANK_TRANSFER', amount: 15000, allocations: [{ invoiceId: 'invoice-1', amount: 10000 }, { invoiceId: 'invoice-2', amount: 5000 }] });
   assert.equal(result.allocations.length, 2);
   assert.equal(repo.invoices.get('invoice-1').status, 'PAID');
   assert.equal(repo.invoices.get('invoice-2').status, 'PAID');
 });
 
 test('advance payment preserves only the unallocated remainder', async () => {
-  const result = await new PaymentService(repository()).create('actor-1', 'organization-1', { method: 'CASH', purpose: 'ADVANCE', amount: 12000, allocations: [{ invoiceId: 'invoice-1', amount: 10000 }] });
+  const result = await service(repository()).create('actor-1', 'organization-1', { method: 'CASH', purpose: 'ADVANCE', amount: 12000, allocations: [{ invoiceId: 'invoice-1', amount: 10000 }] });
   assert.equal(Number(result.allocatedAmount), 10000);
   assert.equal(Number(result.unappliedAmount), 2000);
 });
 
 test('unapplied advance can later be allocated to another invoice', async () => {
   const repo = repository([invoice('invoice-1', 10000), invoice('invoice-2', 5000)]);
-  const service = new PaymentService(repo);
-  await service.create('actor-1', 'organization-1', { method: 'CASH', purpose: 'ADVANCE', amount: 12000, allocations: [{ invoiceId: 'invoice-1', amount: 10000 }] });
-  const result = await service.allocateAdvance('actor-1', 'organization-1', 'payment-1', { invoiceId: 'invoice-2', amount: 2000 });
+  const payments = service(repo);
+  await payments.create('actor-1', 'organization-1', { method: 'CASH', purpose: 'ADVANCE', amount: 12000, allocations: [{ invoiceId: 'invoice-1', amount: 10000 }] });
+  const result = await payments.allocateAdvance('actor-1', 'organization-1', 'payment-1', { invoiceId: 'invoice-2', amount: 2000 });
   assert.equal(Number(result.unappliedAmount), 0);
   assert.equal(repo.invoices.get('invoice-2').outstandingBalance, 3000);
   assert.equal(result.allocations.length, 2);
@@ -91,25 +94,25 @@ test('unapplied advance can later be allocated to another invoice', async () => 
 
 test('overpayment is rejected without changing invoice balance', async () => {
   const repo = repository();
-  await assert.rejects(() => new PaymentService(repo).create('actor-1', 'organization-1', { method: 'CASH', amount: 10001, allocations: [{ invoiceId: 'invoice-1', amount: 10001 }] }));
+  await assert.rejects(() => service(repo).create('actor-1', 'organization-1', { method: 'CASH', amount: 10001, allocations: [{ invoiceId: 'invoice-1', amount: 10001 }] }));
   assert.equal(repo.invoices.get('invoice-1').outstandingBalance, 10000);
 });
 
 test('security-deposit payment requires a security-deposit invoice line', async () => {
-  await assert.rejects(() => new PaymentService(repository()).create('actor-1', 'organization-1', { method: 'UPI', purpose: 'SECURITY_DEPOSIT', amount: 1000, allocations: [{ invoiceId: 'invoice-1', amount: 1000 }] }));
+  await assert.rejects(() => service(repository()).create('actor-1', 'organization-1', { method: 'UPI', purpose: 'SECURITY_DEPOSIT', amount: 1000, allocations: [{ invoiceId: 'invoice-1', amount: 1000 }] }));
 });
 
 test('refund foundation reserves refundable value and rejects excess requests', async () => {
-  const service = new PaymentService(repository());
-  const refund = await service.requestRefund('actor-1', 'organization-1', 'payment-1', { amount: 2000, reason: 'Duplicate transfer' });
+  const payments = service(repository());
+  const refund = await payments.requestRefund('actor-1', 'organization-1', 'payment-1', { amount: 2000, reason: 'Duplicate transfer' });
   assert.equal(refund.status, 'PENDING');
-  await assert.rejects(() => service.requestRefund('actor-1', 'organization-1', 'payment-1', { amount: 10001, reason: 'Invalid' }));
+  await assert.rejects(() => payments.requestRefund('actor-1', 'organization-1', 'payment-1', { amount: 10001, reason: 'Invalid' }));
 });
 
 test('outstanding recalculation uses completed allocations and issued credits', async () => {
   const item = invoice('invoice-1', 10000); item.total = 10000; item.creditTotal = 1000;
   const repo = repository([item], { appliedAmount: 4000 });
-  const result = await new PaymentService(repo).recalculateInvoice('actor-1', 'organization-1', 'invoice-1');
+  const result = await service(repo).recalculateInvoice('actor-1', 'organization-1', 'invoice-1');
   assert.equal(Number(result.outstandingBalance), 5000);
   assert.equal(result.status, 'PARTIALLY_PAID');
 });

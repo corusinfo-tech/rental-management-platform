@@ -8,7 +8,7 @@ const verificationId = '22222222-2222-4222-8222-222222222222';
 test('an owner invitation uses the shared generic verification subject and creates ID-only outbox records', async () => {
   const calls = [];
   const repository = {
-    transaction: async (callback) => callback({}), ownerMembership: async () => ({ id: 'owner-membership' }), organizationIsActive: async () => true,
+    transaction: async (callback) => callback({}), membershipWithPermission: async () => ({ id: 'owner-membership' }), organizationIsActive: async () => true,
     findInvitableRole: async () => ({ id: 'role-1' }), expirePending: async () => ({ count: 0 }), findPending: async () => null,
     create: async (input) => ({ ...input, status: 'PENDING', acceptedAt: null, declinedAt: null, revokedAt: null, createdAt: new Date(), updatedAt: new Date(), version: 1 }),
     audit: async (...args) => calls.push(['audit', args]), outbox: async (...args) => calls.push(['outbox', args]),
@@ -46,4 +46,35 @@ test('existing-user acceptance creates one active membership and assigns the inv
   assert.equal(calls.find(([kind]) => kind === 'role')[1][0], 'membership-1');
   assert.ok(calls.some(([kind, args]) => kind === 'outbox' && args[0] === 'MembershipCreated'));
   assert.ok(calls.some(([kind, args]) => kind === 'outbox' && args[0] === 'InvitationAccepted'));
+});
+
+test('lease-party invitation requires an explicit tenant role and matching linkable party', async () => {
+  const repository = {
+    transaction: async (callback) => callback({}), membershipWithPermission: async () => ({ id: 'owner-membership' }), organizationIsActive: async () => true,
+    findInvitableRole: async () => ({ id: 'manager-role', code: 'PROPERTY_MANAGER' }),
+  };
+  const service = new InvitationService(repository, { createVerification: async () => { throw new Error('must not create verification'); } });
+  await assert.rejects(
+    () => service.invite('owner-user', 'org-1', { email: 'tenant@example.com', roleId: 'manager-role', leasePartyId: '33333333-3333-4333-8333-333333333333' }),
+    /requires the TENANT role/,
+  );
+});
+
+test('verified tenant invitation links User Person to the selected LeaseParty', async () => {
+  const calls = [];
+  const invitation = { id: invitationId, organizationId: 'org-1', verificationId, email: 'tenant@example.com', roleId: 'tenant-role', leasePartyId: 'party-1' };
+  const repository = {
+    findByVerificationId: async () => ({ ...invitation, version: 1 }), accept: async () => ({ count: 1 }), organizationIsActive: async () => true,
+    findActiveUserByEmail: async () => ({ id: 'user-1', personId: 'person-1' }), findMembership: async () => ({ id: 'membership-1' }), activateMembership: async () => ({ id: 'membership-1' }),
+    assignRole: async () => ({}), linkLeaseParty: async (...args) => { calls.push(args); return { count: 1 }; },
+    audit: async () => ({}), outbox: async () => ({}), expireIfNeeded: async () => ({ count: 0 }),
+  };
+  const engine = { verify: async (input) => {
+    const record = { id: verificationId, subjectType: 'INVITATION', subjectReferenceId: invitationId, purpose: 'INVITATION' };
+    await input.afterVerified(record, {});
+    return record;
+  } };
+  const service = new InvitationService(repository, engine);
+  await service.accept(verificationId, `${verificationId}.${'b'.repeat(43)}`, 1);
+  assert.deepEqual(calls[0].slice(0, 4), ['org-1', 'party-1', 'person-1', verificationId]);
 });

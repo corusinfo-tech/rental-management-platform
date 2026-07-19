@@ -1,1 +1,22 @@
-// Platform domain models will be introduced in a later milestone.
+enum PlatformPrincipalStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+}
+
+model PlatformPrincipal {
+  id        String                  @id @default(uuid())
+  userId    String                  @unique
+  role      PlatformRole            @default(SUPER_ADMIN)
+  status    PlatformPrincipalStatus @default(ACTIVE)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  deletedAt DateTime?
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([role, status, deletedAt])
+}

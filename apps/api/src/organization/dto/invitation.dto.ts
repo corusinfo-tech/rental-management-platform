@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsInt, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 
 export class CreateOrganizationInvitationDto {
   @ApiProperty({ example: 'invitee@example.com' })
@@ -12,6 +12,11 @@ export class CreateOrganizationInvitationDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   roleId!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Explicit lease party to link after this invitation is verified. Valid only for tenant roles.' })
+  @IsOptional()
+  @IsUUID()
+  leasePartyId?: string;
 }
 
 export class InvitationTokenDto {
@@ -32,6 +37,7 @@ export class InvitationResponseDto {
   @ApiProperty() email!: string;
   @ApiProperty() roleId!: string;
   @ApiProperty() verificationId!: string;
+  @ApiPropertyOptional() leasePartyId?: string | null;
   @ApiProperty({ enum: ['PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'REVOKED'] }) status!: string;
   @ApiProperty() expiresAt!: Date;
   @ApiPropertyOptional() acceptedAt?: Date | null;

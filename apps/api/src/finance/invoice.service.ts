@@ -1,14 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreditNoteStatus, InvoiceLineType, InvoiceStatus, Prisma } from '@prisma/client';
 import { CreateCreditNoteDto, CreateInvoiceDto, InvoiceQueryDto, UpdateInvoiceDto } from './dto/invoice.dto';
 import { InvoiceRepository } from './invoice.repository';
+import { PortfolioAccessService, PortfolioPermission } from '../identity/authorization/portfolio-access.service';
 
 @Injectable()
 export class InvoiceService {
-  constructor(private readonly repository: InvoiceRepository) {}
+  constructor(private readonly repository: InvoiceRepository, private readonly access: PortfolioAccessService) {}
 
   async create(actorUserId: string, organizationId: string, input: CreateInvoiceDto) {
-    await this.assertManager(actorUserId, organizationId);
+    const scope = await this.access.scope(actorUserId, organizationId, PortfolioPermission.InvoiceManage);
+    await this.access.assertSchedule(scope, input.rentScheduleId);
     const schedule = await this.repository.findSchedule(organizationId, input.rentScheduleId);
     if (!schedule) throw new NotFoundException('Rent schedule not found');
     if (schedule.invoice) throw new ConflictException('An invoice already exists for this rent schedule');
@@ -45,9 +47,9 @@ export class InvoiceService {
   }
 
   async list(actorUserId: string, organizationId: string, query: InvoiceQueryDto) {
-    await this.assertManager(actorUserId, organizationId);
+    const scope = await this.access.scope(actorUserId, organizationId, PortfolioPermission.InvoiceRead);
     const where: Prisma.InvoiceWhereInput = {
-      organizationId, deletedAt: null,
+      organizationId, deletedAt: null, ...this.access.invoiceWhere(scope),
       ...(query.status ? { status: query.status } : {}),
       ...(query.leaseId ? { leaseId: query.leaseId } : {}),
       ...(query.search ? { OR: [{ invoiceNumber: { contains: query.search.trim(), mode: 'insensitive' } }, { lease: { code: { contains: query.search.trim(), mode: 'insensitive' } } }] } : {}),
@@ -58,12 +60,12 @@ export class InvoiceService {
   }
 
   async find(actorUserId: string, organizationId: string, invoiceId: string) {
-    await this.assertManager(actorUserId, organizationId);
+    await this.authorizeRead(actorUserId, organizationId, invoiceId);
     return this.getInvoice(organizationId, invoiceId);
   }
 
   async update(actorUserId: string, organizationId: string, invoiceId: string, input: UpdateInvoiceDto) {
-    await this.assertManager(actorUserId, organizationId);
+    await this.authorizeManage(actorUserId, organizationId, invoiceId);
     const invoice = await this.getInvoice(organizationId, invoiceId);
     const mutableStatuses: InvoiceStatus[] = [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.OVERDUE, InvoiceStatus.VOID];
     if (input.status && !mutableStatuses.includes(input.status)) throw new BadRequestException('Payment-derived and archived statuses cannot be set through this endpoint');
@@ -78,7 +80,7 @@ export class InvoiceService {
   }
 
   async createCreditNote(actorUserId: string, organizationId: string, invoiceId: string, input: CreateCreditNoteDto) {
-    await this.assertManager(actorUserId, organizationId);
+    await this.authorizeManage(actorUserId, organizationId, invoiceId);
     const invoice = await this.getInvoice(organizationId, invoiceId);
     const status = input.status ?? CreditNoteStatus.DRAFT;
     const createStatuses: CreditNoteStatus[] = [CreditNoteStatus.DRAFT, CreditNoteStatus.ISSUED];
@@ -96,12 +98,12 @@ export class InvoiceService {
   }
 
   async archive(actorUserId: string, organizationId: string, invoiceId: string) {
-    await this.assertManager(actorUserId, organizationId); const invoice = await this.getInvoice(organizationId, invoiceId);
+    await this.authorizeManage(actorUserId, organizationId, invoiceId); const invoice = await this.getInvoice(organizationId, invoiceId);
     return this.repository.transaction(async (tx) => { const archived = await tx.invoice.update({ where: { id: invoiceId }, data: { archivedFromStatus: invoice.status, status: InvoiceStatus.ARCHIVED, deletedAt: new Date() } }); await this.repository.audit(actorUserId, organizationId, invoiceId, 'invoice.archived', { invoiceId }, tx); return archived; });
   }
 
   async restore(actorUserId: string, organizationId: string, invoiceId: string) {
-    await this.assertManager(actorUserId, organizationId); const invoice = await this.repository.findInvoice(organizationId, invoiceId, true);
+    await this.authorizeManage(actorUserId, organizationId, invoiceId); const invoice = await this.repository.findInvoice(organizationId, invoiceId, true);
     if (!invoice || !invoice.deletedAt) throw new NotFoundException('Archived invoice not found');
     return this.repository.transaction(async (tx) => { const restored = await tx.invoice.update({ where: { id: invoiceId }, data: { status: invoice.archivedFromStatus ?? InvoiceStatus.DRAFT, archivedFromStatus: null, deletedAt: null } }); await this.repository.audit(actorUserId, organizationId, invoiceId, 'invoice.restored', { invoiceId }, tx); return restored; });
   }
@@ -118,6 +120,7 @@ export class InvoiceService {
     };
     return transitions[current]?.includes(next) ?? false;
   }
-  private async assertManager(userId: string, organizationId: string) { if (!(await this.repository.managerMembership(userId, organizationId))) throw new ForbiddenException('Invoice management permission is required'); }
+  private async authorizeRead(userId: string, organizationId: string, invoiceId: string) { const scope = await this.access.scope(userId, organizationId, PortfolioPermission.InvoiceRead); await this.access.assertInvoice(scope, invoiceId); }
+  private async authorizeManage(userId: string, organizationId: string, invoiceId: string) { const scope = await this.access.scope(userId, organizationId, PortfolioPermission.InvoiceManage); await this.access.assertInvoice(scope, invoiceId); }
   private async getInvoice(organizationId: string, invoiceId: string) { const invoice = await this.repository.findInvoice(organizationId, invoiceId); if (!invoice) throw new NotFoundException('Invoice not found'); return invoice; }
 }

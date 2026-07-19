@@ -1,11 +1,12 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from '../identity/authorization/access-token.guard';
+import { PlatformPrincipalGuard } from '../identity/authorization/platform-principal.guard';
 import type { IdentityRequest } from '../identity/authorization/request-context';
 import { ApprovalVersionDto, OrganizationApprovalResponseDto, RejectOrganizationDto, ReopenOrganizationReviewDto } from './dto/approval.dto';
 import { OrganizationApprovalService } from './approval.service';
 
-@ApiTags('Organization approval') @ApiBearerAuth() @UseGuards(AccessTokenGuard)
+@ApiTags('Organization approval') @ApiBearerAuth() @UseGuards(AccessTokenGuard, PlatformPrincipalGuard)
 @Controller({ path: 'admin/organizations', version: '1' })
 export class OrganizationApprovalController {
   constructor(private readonly approvals: OrganizationApprovalService) {}

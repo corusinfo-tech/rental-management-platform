@@ -6,7 +6,6 @@ import { PrismaService } from '../database/prisma.service';
 export class PropertyRepository {
   constructor(private readonly prisma: PrismaService) {}
   transaction<T>(callback: (tx: Prisma.TransactionClient) => Promise<T>) { return this.prisma.$transaction(callback); }
-  managerMembership(userId: string, organizationId: string) { return this.prisma.organizationMembership.findFirst({ where: { organizationId, status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } }, OR: [{ isOwner: true }, { roles: { some: { role: { code: { in: ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'] }, deletedAt: null } } } }] } }); }
   activeUserInOrganization(userId: string, organizationId: string, tx: Prisma.TransactionClient) { return tx.organizationMembership.findFirst({ where: { organizationId, status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } } } }); }
   list(where: Prisma.PropertyWhereInput, skip: number, take: number, orderBy: Prisma.PropertyOrderByWithRelationInput) { return this.prisma.property.findMany({ where, skip, take, orderBy, include: { address: true, _count: { select: { buildings: true, images: true, documents: true } } } }); }
   count(where: Prisma.PropertyWhereInput) { return this.prisma.property.count({ where }); }

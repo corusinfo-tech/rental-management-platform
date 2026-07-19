@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LeaseService } from '../dist/rental/lease.service.js';
 
+const access = { scope: async () => ({ organizationWide: true, propertyIds: [] }), assertUnit: async () => 'property-1', assertLease: async () => 'property-1', leaseWhere: () => ({}) };
+const service = (repo) => new LeaseService(repo, access);
+
 function repository(overrides = {}) {
   const calls = [];
   const lease = { id: 'lease-1', organizationId: 'organization-1', unitId: 'unit-1', status: 'DRAFT', startsAt: new Date('2026-08-01'), endsAt: new Date('2027-07-31') };
@@ -29,7 +32,7 @@ const createInput = {
 
 test('creates a lease with normalized code, terms, and an audit record', async () => {
   const repo = repository();
-  const result = await new LeaseService(repo).create('actor-1', 'organization-1', createInput);
+  const result = await service(repo).create('actor-1', 'organization-1', createInput);
   assert.equal(result.code, 'LEASE-2026-1');
   assert.equal(result.terms.currency, 'INR');
   assert.equal(repo.calls[0][3], 'lease.created');
@@ -37,19 +40,19 @@ test('creates a lease with normalized code, terms, and an audit record', async (
 
 test('rejects an invalid lease date range before persistence', async () => {
   const repo = repository();
-  await assert.rejects(() => new LeaseService(repo).create('actor-1', 'organization-1', { ...createInput, endsAt: createInput.startsAt }));
+  await assert.rejects(() => service(repo).create('actor-1', 'organization-1', { ...createInput, endsAt: createInput.startsAt }));
   assert.equal(repo.calls.length, 0);
 });
 
 test('does not activate a lease when the unit has another active lease', async () => {
   const repo = repository({ activeLeaseForUnit: async () => ({ id: 'lease-existing' }) });
-  await assert.rejects(() => new LeaseService(repo).update('actor-1', 'organization-1', 'lease-1', { status: 'ACTIVE' }));
+  await assert.rejects(() => service(repo).update('actor-1', 'organization-1', 'lease-1', { status: 'ACTIVE' }));
   assert.equal(repo.calls.length, 0);
 });
 
 test('archives leases through a soft delete and writes an audit record', async () => {
   const repo = repository();
-  const result = await new LeaseService(repo).archive('actor-1', 'organization-1', 'lease-1');
+  const result = await service(repo).archive('actor-1', 'organization-1', 'lease-1');
   assert.equal(result.status, 'ARCHIVED');
   assert.ok(result.deletedAt instanceof Date);
   assert.equal(repo.calls[0][3], 'lease.archived');

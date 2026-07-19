@@ -10,8 +10,8 @@ export class OrganizationSettingsService {
 
   async get(actorUserId: string, organizationId: string): Promise<OrganizationSettingsResponseDto> {
     return this.repository.transaction(async (transaction) => {
-      await this.assertAccess(actorUserId, organizationId, transaction);
-      const settings = await this.repository.findForUpdate(organizationId, transaction);
+      await this.assertAccess(actorUserId, organizationId, 'organization.settings.read', transaction);
+      const settings = await this.repository.findOrCreateDefaults(organizationId, transaction);
       if (!settings) throw new NotFoundException('Organization settings not found');
       return this.response(settings);
     });
@@ -19,8 +19,8 @@ export class OrganizationSettingsService {
 
   async update(actorUserId: string, organizationId: string, input: UpdateOrganizationSettingsDto): Promise<OrganizationSettingsResponseDto> {
     return this.repository.transaction(async (transaction) => {
-      await this.assertAccess(actorUserId, organizationId, transaction);
-      const current = await this.repository.findForUpdate(organizationId, transaction);
+      await this.assertAccess(actorUserId, organizationId, 'organization.settings.manage', transaction);
+      const current = await this.repository.findOrCreateDefaults(organizationId, transaction);
       if (!current) throw new NotFoundException('Organization settings not found');
       if (current.version !== input.expectedVersion) throw new ConflictException('Organization settings changed concurrently');
       const data = this.normalizedData(input);
@@ -42,8 +42,8 @@ export class OrganizationSettingsService {
     });
   }
 
-  private async assertAccess(userId: string, organizationId: string, transaction: Prisma.TransactionClient) {
-    if (!(await this.repository.settingsAccess(userId, organizationId, transaction))) throw new ForbiddenException('Only organization owners and administrators may manage settings');
+  private async assertAccess(userId: string, organizationId: string, permissionCode: string, transaction: Prisma.TransactionClient) {
+    if (!(await this.repository.settingsAccess(userId, organizationId, permissionCode, transaction))) throw new ForbiddenException('Organization settings permission is required');
   }
 
   private normalizedData(input: UpdateOrganizationSettingsDto): Prisma.OrganizationSettingsUpdateInput {

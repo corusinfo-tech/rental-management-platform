@@ -36,30 +36,35 @@ enum PropertyDocumentType {
 }
 
 model Property {
-  id             String              @id @default(uuid())
-  organizationId String
-  ownerUserId    String
-  code           String
-  name           String
-  description    String?
-  propertyType   PropertyType
-  status         PropertyStatus      @default(DRAFT)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  deletedAt      DateTime?
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  owner          User                @relation("PropertyOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  address        PropertyAddress?
-  buildings      Building[]
-  amenities      PropertyAmenity[]
-  documents      PropertyDocument[]
-  images         PropertyImage[]
-  ownerships     PropertyOwnership[]
+  id                   String                        @id @default(uuid())
+  organizationId       String
+  ownerUserId          String?
+  createdByUserId      String?
+  code                 String
+  name                 String
+  description          String?
+  propertyType         PropertyType
+  status               PropertyStatus                @default(DRAFT)
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  deletedAt            DateTime?
+  organization         Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  owner                User?                         @relation("PropertyOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  createdBy            User?                         @relation("PropertyCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  address              PropertyAddress?
+  buildings            Building[]
+  amenities            PropertyAmenity[]
+  documents            PropertyDocument[]
+  images               PropertyImage[]
+  ownerships           PropertyOwnership[]
+  portfolioAssignments PropertyPortfolioAssignment[]
+  payments             Payment[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status, deletedAt])
   @@index([organizationId, name])
   @@index([ownerUserId, deletedAt])
+  @@index([createdByUserId, createdAt])
 }
 
 model PropertyAddress {
@@ -208,4 +213,23 @@ model PropertyOwnership {
 
   @@unique([propertyId, userId])
   @@index([userId])
+}
+
+model PropertyPortfolioAssignment {
+  id               String                 @id @default(uuid())
+  organizationId   String
+  propertyId       String
+  membershipId     String
+  assignedByUserId String?
+  assignedAt       DateTime               @default(now())
+  revokedAt        DateTime?
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  property         Property               @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  membership       OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  assignedBy       User?                  @relation("PortfolioAssignmentAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([membershipId, propertyId])
+  @@index([organizationId, membershipId, revokedAt])
+  @@index([propertyId, revokedAt])
+  @@index([assignedByUserId])
 }

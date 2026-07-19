@@ -18,6 +18,7 @@ function createRepository() {
       calls.push(['organization', input]);
       return { id: 'organization-1' };
     },
+    createRegistrationOrganizationSettings: async (organizationId) => calls.push(['settings', organizationId]),
     createActiveMembership: async (input) => {
       calls.push(['membership', input]);
       return { id: 'membership-1' };
@@ -74,7 +75,7 @@ test('landlord registration creates one owner organization and assigns the landl
   assert.deepEqual(repository.calls.find(([type]) => type === 'membership')[1], {
     organizationId: 'organization-1', personId: 'person-1', isOwner: true,
   });
-  assert.deepEqual(repository.calls.find(([type]) => type === 'role')[1], { membershipId: 'membership-1', roleId: 'LANDLORD-role' });
+  assert.deepEqual(repository.calls.find(([type]) => type === 'role')[1], { membershipId: 'membership-1', roleId: 'ORG_PROPRIETOR-role' });
 });
 
 test('duplicate identifiers receive the same idempotent accepted response without new records', async () => {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ApprovalStatus, MembershipStatus, Prisma } from '@prisma/client';
+import { ApprovalStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -11,7 +11,7 @@ export class OrganizationApprovalRepository {
   approve(organizationId: string, reviewerId: string, expectedVersion: number, transaction: Prisma.TransactionClient) { return transaction.organizationApproval.updateMany({ where: { organizationId, status: ApprovalStatus.PENDING, version: expectedVersion }, data: { status: ApprovalStatus.APPROVED, reviewedByUserId: reviewerId, reviewedAt: new Date(), reason: null, version: { increment: 1 } } }); }
   reject(organizationId: string, reviewerId: string, reason: string, expectedVersion: number, transaction: Prisma.TransactionClient) { return transaction.organizationApproval.updateMany({ where: { organizationId, status: ApprovalStatus.PENDING, version: expectedVersion }, data: { status: ApprovalStatus.REJECTED, reviewedByUserId: reviewerId, reviewedAt: new Date(), reason, version: { increment: 1 } } }); }
   reopen(organizationId: string, reviewerId: string, reason: string | undefined, expectedVersion: number, transaction: Prisma.TransactionClient) { return transaction.organizationApproval.updateMany({ where: { organizationId, status: ApprovalStatus.REJECTED, version: expectedVersion }, data: { status: ApprovalStatus.PENDING, reviewedByUserId: reviewerId, reviewedAt: new Date(), reason: reason ?? null, version: { increment: 1 } } }); }
-  platformSuperAdmin(userId: string, transaction: Prisma.TransactionClient) { return transaction.organizationMembership.findFirst({ where: { status: MembershipStatus.ACTIVE, deletedAt: null, person: { user: { id: userId, deletedAt: null } }, roles: { some: { role: { code: 'SUPER_ADMIN', organizationId: null, isSystem: true, deletedAt: null } } } } }); }
+  platformSuperAdmin(userId: string, transaction: Prisma.TransactionClient) { return transaction.platformPrincipal.findFirst({ where: { userId, role: 'SUPER_ADMIN', status: 'ACTIVE', deletedAt: null, user: { deletedAt: null } } }); }
   audit(actorUserId: string, action: string, metadata: Prisma.InputJsonValue, transaction: Prisma.TransactionClient) { const context = metadata as { organizationId: string; approvalId?: string }; return transaction.identityAuditEvent.create({ data: { actorUserId, organizationId: context.organizationId, aggregateId: context.approvalId ?? context.organizationId, action, metadata } }); }
   outbox(eventType: string, organizationId: string, payload: Prisma.InputJsonValue, transaction: Prisma.TransactionClient) { return transaction.outboxEvent.create({ data: { eventType, aggregateType: 'OrganizationApproval', aggregateId: organizationId, organizationId, payload } }); }
 }

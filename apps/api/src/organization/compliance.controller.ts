@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from '../identity/authorization/access-token.guard';
+import { PlatformPrincipalGuard } from '../identity/authorization/platform-principal.guard';
 import type { IdentityRequest } from '../identity/authorization/request-context';
 import { OrganizationComplianceResponseDto, UpdateOrganizationComplianceDto } from './dto/compliance.dto';
 import { OrganizationComplianceService } from './compliance.service';
 
-@ApiTags('Organization compliance') @ApiBearerAuth() @UseGuards(AccessTokenGuard)
+@ApiTags('Organization compliance') @ApiBearerAuth() @UseGuards(AccessTokenGuard, PlatformPrincipalGuard)
 @Controller({ path: 'admin/organizations', version: '1' })
 export class OrganizationComplianceController {
   constructor(private readonly compliance: OrganizationComplianceService) {}
