@@ -4,7 +4,7 @@
 
 **READY FOR DRAFT PR. NOT READY FOR MERGE.**
 
-Docker migration-image validation is pending because this environment has the Docker CLI but no Compose plugin or reachable Docker daemon. No merge should occur until the migration image is built and validated in a separate non-production environment.
+Docker migration-image validation is pending in GitHub Actions. A focused pull-request merge gate now builds and inspects only the migration target, performs database-free checks with container networking disabled, and verifies the Compose release profile using synthetic CI-only values. No merge should occur until that workflow completes successfully.
 
 ## Source and evidence verification
 
@@ -75,7 +75,7 @@ The initial sandboxed test attempt was invalidated by a local socket-permission 
 
 ## Docker validation
 
-Status: **PENDING — MERGE BLOCKER**
+Status: **PENDING GITHUB ACTIONS RESULT — MERGE BLOCKER**
 
 - Docker CLI found: version 29.6.1.
 - Docker Compose plugin: unavailable.
@@ -85,8 +85,25 @@ Status: **PENDING — MERGE BLOCKER**
 - No container was started.
 - No database was created or contacted.
 - No migration status or deployment command was executed.
+- The pull-request-only `migration-image-merge-gate` job was added to `.github/workflows/ci.yml`.
+- The job builds only the `migrate` target and tags it with the tested GitHub commit SHA.
+- It verifies the image command, Prisma 6.19.3, `prisma.config.ts`, and the exact committed schema and migration file lists.
+- Every executable container check uses `--network none` and never invokes a migration or database command.
+- Compose validation uses a temporary ignored copy of `.env.production.example`, does not print rendered configuration, verifies the `release` profile and service selection, and deletes temporary files on exit.
 
-Before merge, build the migration target in a non-production environment with the local-only tag `noagent4u-reconciliation-migrate:dd376fab-test`, then verify the Prisma binary version and the presence of committed schemas and migrations without starting a container or connecting to a database.
+Do not claim Docker validation PASS until this job succeeds for the PR head.
+
+## Database-dependent test disposition
+
+The three locally skipped database entry points were inspected:
+
+- `tests/identity-database.test.mjs`
+- `tests/phase1-database.test.mjs`
+- `apps/api/test/phase1-database.integration.test.mjs`
+
+They validate persisted identity behavior, Phase 1 schema constraints and authorization behavior. Neither the Docker migration command path nor the package-manager declaration changes schema, migrations, generated Prisma code, repositories, services, or authorization logic. They are therefore unrelated to this narrowly scoped reconciliation diff.
+
+The canonical Phase 1 implementation report already records the relevant database validation against disposable PostgreSQL: 24 migrations applied from empty, representative pre-Phase-1 upgrade validation, and 21 database integration tests passed with 0 failures and 0 skips. The skipped suites are not weakened, deleted, or represented as passing in this review; rerunning them is outside this runner-only merge gate.
 
 ## Isolation and safety confirmation
 
@@ -98,7 +115,7 @@ Before merge, build the migration target in a non-production environment with th
 
 ## Remaining blockers
 
-1. Complete the migration-image validation with Docker and Compose in a non-production environment.
-2. Review the three database-dependent skipped suites separately if zero skipped database tests are required by merge policy.
+1. Obtain a successful GitHub Actions result for the new migration-image and Compose release-gate job on the exact PR head.
+2. After recording that run in this report, rerun CI on the report-only commit and require another successful result.
 
 The branch is suitable for a draft pull request only. It is **not ready for merge**.

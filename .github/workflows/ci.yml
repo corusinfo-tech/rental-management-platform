@@ -12,3 +12,91 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+
+  migration-image-merge-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build migration target
+        run: |
+          docker build \
+            --file apps/api/Dockerfile \
+            --target migrate \
+            --tag noagent4u-reconciliation-migrate:${{ github.sha }} \
+            .
+
+      - name: Verify migration image command
+        run: |
+          image="noagent4u-reconciliation-migrate:${{ github.sha }}"
+          expected='["/app/node_modules/.bin/prisma","migrate","deploy","--schema","prisma/schemas"]'
+          actual="$(docker image inspect --format '{{json .Config.Cmd}}' "$image")"
+          test "$actual" = "$expected"
+
+      - name: Verify database-free migration image contents
+        run: |
+          image="noagent4u-reconciliation-migrate:${{ github.sha }}"
+          expected_schemas="$RUNNER_TEMP/expected-schemas.txt"
+          actual_schemas="$RUNNER_TEMP/actual-schemas.txt"
+          expected_migrations="$RUNNER_TEMP/expected-migrations.txt"
+          actual_migrations="$RUNNER_TEMP/actual-migrations.txt"
+
+          git ls-files 'prisma/schemas/*.prisma' | sort > "$expected_schemas"
+          git ls-files 'prisma/migrations/*/migration.sql' | sort > "$expected_migrations"
+          test -s "$expected_schemas"
+          test -s "$expected_migrations"
+
+          docker run --rm --network none --entrypoint /bin/sh "$image" -ceu '
+            version_output="$(/app/node_modules/.bin/prisma --version)"
+            printf "%s\n" "$version_output" | grep -Eq "^prisma[[:space:]]+:[[:space:]]+6\\.19\\.3$"
+            test -f /app/prisma.config.ts
+            test -d /app/prisma/schemas
+            test -d /app/prisma/migrations
+          '
+
+          docker run --rm --network none --entrypoint /bin/sh "$image" \
+            -c "find /app/prisma/schemas -maxdepth 1 -type f -name '*.prisma' -print" \
+            | sed 's#^/app/##' | sort > "$actual_schemas"
+          docker run --rm --network none --entrypoint /bin/sh "$image" \
+            -c "find /app/prisma/migrations -mindepth 2 -maxdepth 2 -type f -name migration.sql -print" \
+            | sed 's#^/app/##' | sort > "$actual_migrations"
+
+          diff -u "$expected_schemas" "$actual_schemas"
+          diff -u "$expected_migrations" "$actual_migrations"
+
+      - name: Verify Compose release gate
+        run: |
+          synthetic_env=.env.production
+          rendered_compose="$RUNNER_TEMP/rendered-compose.json"
+          cleanup() {
+            rm -f "$synthetic_env" "$rendered_compose"
+          }
+          trap cleanup EXIT
+
+          cp .env.production.example "$synthetic_env"
+          docker compose --profile release \
+            --env-file "$synthetic_env" \
+            -f docker-compose.production.yml \
+            config --quiet
+          docker compose --profile release \
+            --env-file "$synthetic_env" \
+            -f docker-compose.production.yml \
+            config --format json > "$rendered_compose"
+
+          jq -e '.services.migrate.profiles == ["release"]' "$rendered_compose" > /dev/null
+
+          default_services="$(docker compose \
+            --env-file "$synthetic_env" \
+            -f docker-compose.production.yml \
+            config --services)"
+          release_services="$(docker compose --profile release \
+            --env-file "$synthetic_env" \
+            -f docker-compose.production.yml \
+            config --services)"
+
+          ! grep -Fxq migrate <<< "$default_services"
+          grep -Fxq migrate <<< "$release_services"
