@@ -2,9 +2,9 @@
 
 ## Decision
 
-**READY FOR DRAFT PR. NOT READY FOR MERGE.**
+**READY FOR MERGE.**
 
-Docker migration-image validation is pending in GitHub Actions. A focused pull-request merge gate now builds and inspects only the migration target, performs database-free checks with container networking disabled, and verifies the Compose release profile using synthetic CI-only values. No merge should occur until that workflow completes successfully.
+GitHub Actions successfully built and inspected only the migration target, performed database-free checks with container networking disabled, and verified the Compose release profile using synthetic CI-only values. PR #4 remains draft and requires the normal human review and explicit merge action; this report does not authorize deployment or migration.
 
 ## Source and evidence verification
 
@@ -23,13 +23,13 @@ Docker migration-image validation is pending in GitHub Actions. A focused pull-r
 
 ### `apps/api/Dockerfile`
 
-Decision: **ACCEPT FOR DRAFT REVIEW; MERGE-BLOCKED PENDING IMAGE VALIDATION**
+Decision: **ACCEPT**
 
 The final diff replaces `pnpm exec prisma` with the explicit repository binary `/app/node_modules/.bin/prisma`. The migration target inherits the build stage, where the frozen dependency installation includes the Prisma CLI before the repository source, schemas, and committed migrations are copied into the image.
 
 Local validation proved that `./node_modules/.bin/prisma --version` runs Prisma 6.19.3 directly, loads `prisma.config.ts`, and loads the multi-file schema from `prisma/schemas`. The repository contains 10 committed schema files and 26 committed migration files. The explicit path cannot invoke dynamic package installation.
 
-The patch's commented troubleshooting lines were removed, leaving only the one-line command change. The target image itself could not be built in this environment, so this change is not approved for merge yet.
+The patch's commented troubleshooting lines were removed, leaving only the one-line command change. The target image and its database-free checks passed in GitHub Actions.
 
 ### `docker-compose.production.yml`
 
@@ -75,23 +75,34 @@ The initial sandboxed test attempt was invalidated by a local socket-permission 
 
 ## Docker validation
 
-Status: **PENDING GITHUB ACTIONS RESULT — MERGE BLOCKER**
+Status: **PASS**
+
+- Workflow run: [CI run 29869748121](https://github.com/corusinfo-tech/rental-management-platform/actions/runs/29869748121)
+- Tested commit: `c0f8362e8b1937012953ca116122d0c29c2023bd`
+- Migration-image job: [migration-image-merge-gate](https://github.com/corusinfo-tech/rental-management-platform/actions/runs/29869748121/job/88766703986) — PASS
+- Standard verify job: [verify](https://github.com/corusinfo-tech/rental-management-platform/actions/runs/29869748121/job/88766703977) — PASS
+- Migration target image build: PASS
+- Exact default Prisma migration command: PASS
+- Prisma binary and version 6.19.3: PASS
+- `prisma.config.ts`, committed schema files, and committed `migration.sql` files: PASS
+- Compose configuration and `release` profile rendering: PASS
+- Default Compose service selection excludes `migrate`: PASS
+- Explicit `--profile release` service selection includes `migrate`: PASS
 
 - Docker CLI found: version 29.6.1.
 - Docker Compose plugin: unavailable.
 - Docker daemon: unavailable.
 - No Docker installation or system configuration was changed.
-- No image was built because the required migration target could not be validated with the unavailable Docker runtime.
-- No container was started.
+- No image or container was built or started locally; validation ran only on the isolated GitHub-hosted runner.
 - No database was created or contacted.
 - No migration status or deployment command was executed.
-- The pull-request-only `migration-image-merge-gate` job was added to `.github/workflows/ci.yml`.
+- The pull-request-only `migration-image-merge-gate` job in `.github/workflows/ci.yml` completed successfully.
 - The job builds only the `migrate` target and tags it with the tested GitHub commit SHA.
 - It verifies the image command, Prisma 6.19.3, `prisma.config.ts`, and the exact committed schema and migration file lists.
 - Every executable container check uses `--network none` and never invokes a migration or database command.
 - Compose validation uses a temporary ignored copy of `.env.production.example`, does not print rendered configuration, verifies the `release` profile and service selection, and deletes temporary files on exit.
 
-Do not claim Docker validation PASS until this job succeeds for the PR head.
+The next report-only commit must pass the same workflow before this review is final.
 
 ## Database-dependent test disposition
 
@@ -115,7 +126,6 @@ The canonical Phase 1 implementation report already records the relevant databas
 
 ## Remaining blockers
 
-1. Obtain a successful GitHub Actions result for the new migration-image and Compose release-gate job on the exact PR head.
-2. After recording that run in this report, rerun CI on the report-only commit and require another successful result.
+No technical merge blocker remains from this reconciliation after the final report-only commit passes the same workflow. PR #4 must remain draft during this task and must not be merged automatically.
 
-The branch is suitable for a draft pull request only. It is **not ready for merge**.
+Subject to that final CI rerun, the branch is **READY FOR MERGE**. Deployment and migration remain separately unauthorized.
