@@ -35,7 +35,7 @@ RUN SOURCE_CLIENT="$(readlink -f /app/node_modules/@prisma/client)" && \
 # files out of the long-running API image while still providing a reproducible
 # migration runner built from the exact same source revision as the API.
 FROM build AS migrate
-CMD ["pnpm", "exec", "prisma", "migrate", "deploy", "--schema", "prisma/schemas"]
+CMD ["/app/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schemas"]
 
 FROM node:22-alpine
 WORKDIR /app
