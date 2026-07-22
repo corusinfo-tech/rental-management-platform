@@ -18,11 +18,17 @@ Before continuing, define and validate the execution values in the operator-only
 export APPROVED_SHA='<approved-sha>'
 export APPROVED_RELEASE_BRANCH='<approved-release-branch>'
 export BACKUP_TIMESTAMP='<explicit-UTC-timestamp>'
+export COMPOSE_PROJECT_NAME='<existing-compose-project-name>'
+export RELEASE_SHA="$APPROVED_SHA"
 
-case "$APPROVED_SHA $APPROVED_RELEASE_BRANCH $BACKUP_TIMESTAMP" in
+case "$APPROVED_SHA $APPROVED_RELEASE_BRANCH $BACKUP_TIMESTAMP $COMPOSE_PROJECT_NAME" in
   *'<'*'>'*) echo 'STOP: replace every runbook placeholder before execution' >&2; exit 1 ;;
 esac
+printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+test "$RELEASE_SHA" = "$APPROVED_SHA"
 ```
+
+`COMPOSE_PROJECT_NAME` must be copied from the existing production Compose deployment record, not invented for this release. Keeping it unchanged preserves the established container namespace and the `${COMPOSE_PROJECT_NAME}_postgres_data` and `${COMPOSE_PROJECT_NAME}_redis_data` volumes. Stop if the existing project name or volume ownership cannot be established safely.
 
 ## 1. Verify and pin source
 
@@ -36,6 +42,7 @@ git show --no-patch --format='%H %cI %s' "$APPROVED_SHA"
 git merge-base --is-ancestor "$APPROVED_SHA" "origin/$APPROVED_RELEASE_BRANCH"
 git switch --detach "$APPROVED_SHA"
 test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
 test -z "$(git status --porcelain)"
 git status --short
 shasum -a 256 prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql
@@ -84,11 +91,14 @@ Stop if any account, its expected organization/property/lease scope, or a safe c
 
 ```bash
 test -f .env.production
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+docker volume inspect "${COMPOSE_PROJECT_NAME}_postgres_data" "${COMPOSE_PROJECT_NAME}_redis_data" >/dev/null
 docker compose --env-file .env.production -f docker-compose.production.yml --profile release config --quiet
 docker compose --env-file .env.production -f docker-compose.production.yml --profile release config --services
 ```
 
-Expected services: `postgres`, `redis`, `api`, `migrate`, `web`, and `worker`. `config --quiet` must exit zero. Do not paste expanded Compose configuration into tickets or logs because it may contain resolved secrets.
+Expected services: `postgres`, `redis`, `api`, `migrate`, `web`, and `worker`. `config --quiet` must exit zero. All four application image names must end in `:$RELEASE_SHA`; Compose must fail rather than substitute a default when `RELEASE_SHA` is absent. The existing project volumes must resolve under the unchanged `COMPOSE_PROJECT_NAME`. Do not paste expanded Compose configuration into tickets or logs because it may contain resolved secrets.
 
 ## 5. Snapshot PostgreSQL
 
@@ -134,11 +144,20 @@ The build command has four named targets: `migrate`, `api`, `worker`, and `web`.
 ```bash
 docker compose --env-file .env.production -f docker-compose.production.yml build migrate api worker web
 docker compose --env-file .env.production -f docker-compose.production.yml images
+for image in \
+  "noagent4u-api:$RELEASE_SHA" \
+  "noagent4u-web:$RELEASE_SHA" \
+  "noagent4u-worker:$RELEASE_SHA" \
+  "noagent4u-migrate:$RELEASE_SHA"; do
+  test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image")" = 'https://github.com/corusinfo-tech/rental-management-platform'
+  test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$RELEASE_SHA"
+  docker image inspect --format 'image={{.RepoTags}} id={{.Id}} digests={{.RepoDigests}} revision={{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image"
+done
 docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate ./node_modules/.bin/prisma migrate deploy --schema prisma/schemas
 docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate ./node_modules/.bin/prisma migrate status --schema prisma/schemas
 ```
 
-Expected: all four builds succeed; migration exits zero; final status says the database schema is up to date. Capture the migration container output and the repository/tag/image-ID table from `docker compose images`.
+Expected: all four builds succeed; every tag contains the complete release SHA; every OCI source/revision label matches the canonical repository and checked-out Git commit; migration exits zero; final status says the database schema is up to date. Capture the migration container output, repository/tag/image-ID table, immutable image IDs, and registry digests where available.
 
 ## 8. Deploy API, worker, and web
 
@@ -149,7 +168,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml ps
 docker compose --env-file .env.production -f docker-compose.production.yml images
 ```
 
-Expected: `api`, `worker`, and `web` are running; API and worker become healthy. Confirm that the images were built from `$APPROVED_SHA` in the release evidence.
+Expected: `api`, `worker`, and `web` are running; API and worker become healthy. Confirm that the images are the previously inspected `:$RELEASE_SHA` tags, that `$RELEASE_SHA` equals checked-out Git `HEAD`, and that the Compose project name and production volume attachments are unchanged.
 
 ## 9. Health and log checks
 
@@ -199,7 +218,7 @@ With a reviewed read-only database session, record counts without exporting row 
 
 ## 12. Completion evidence
 
-Record the pinned SHA, proof that the validated SHA remains an ancestor, migration checksum, backup checksum/path, archive-readability result, full-restore-test result or accepted deferral, pre/post migration status, both `docker compose images` outputs, `docker compose ps`, session-revocation decision/action, smoke-account availability, health responses, redacted smoke matrix, and relevant log window. Keep secrets, tokens, database URLs, personal data, and backup contents out of the evidence package.
+Record the pinned SHA, proof that the validated SHA remains an ancestor, exact `RELEASE_SHA`, equality with Git `HEAD`, unchanged Compose project name and production volume names, migration checksum, backup checksum/path, archive-readability result, full-restore-test result or accepted deferral, pre/post migration status, both `docker compose images` outputs, every application image ID/digest/tag and OCI source/revision label, `docker compose ps`, session-revocation decision/action, smoke-account availability, health responses, redacted smoke matrix, and relevant log window. Keep secrets, tokens, database URLs, personal data, and backup contents out of the evidence package.
 
 ## Rollback and forward-fix conditions
 

@@ -5,6 +5,12 @@ node_modules
 .git
 .env
 .env.*
+*.key
+*.pem
+*.p12
+*.pfx
+secrets
+**/secrets
 legacy
 github-upload-noagent4u
 1.pnpm-store

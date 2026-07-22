@@ -19,27 +19,58 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      RELEASE_SHA: ${{ github.event.pull_request.head.sha }}
+      IMAGE_SOURCE: https://github.com/corusinfo-tech/rental-management-platform
+      APP_ENV_FILE: .env.production.example
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Build migration target
+      - name: Verify checked-out release SHA
         run: |
-          docker build \
-            --file apps/api/Dockerfile \
-            --target migrate \
-            --tag noagent4u-reconciliation-migrate:${{ github.sha }} \
-            .
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+      - name: Verify Compose rejects a missing release SHA
+        run: |
+          missing_sha_env="$RUNNER_TEMP/missing-release-sha.env"
+          grep -v '^RELEASE_SHA=' .env.production.example > "$missing_sha_env"
+          if env -u RELEASE_SHA docker compose \
+            --env-file "$missing_sha_env" \
+            -f docker-compose.production.yml \
+            config --quiet 2>"$RUNNER_TEMP/missing-release-sha.log"; then
+            echo 'Compose unexpectedly accepted a missing RELEASE_SHA' >&2
+            exit 1
+          fi
+          grep -Fq 'RELEASE_SHA' "$RUNNER_TEMP/missing-release-sha.log"
+
+      - name: Build SHA-qualified application images
+        run: |
+          docker compose --profile release \
+            --env-file .env.production.example \
+            -f docker-compose.production.yml \
+            build migrate api worker web
+
+      - name: Verify image tags and OCI labels
+        run: |
+          for service in api web worker migrate; do
+            image="noagent4u-${service}:${RELEASE_SHA}"
+            test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$image")" = "$IMAGE_SOURCE"
+            test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$RELEASE_SHA"
+          done
 
       - name: Verify migration image command
         run: |
-          image="noagent4u-reconciliation-migrate:${{ github.sha }}"
+          image="noagent4u-migrate:${RELEASE_SHA}"
           expected='["/app/node_modules/.bin/prisma","migrate","deploy","--schema","prisma/schemas"]'
           actual="$(docker image inspect --format '{{json .Config.Cmd}}' "$image")"
           test "$actual" = "$expected"
 
       - name: Verify database-free migration image contents
         run: |
-          image="noagent4u-reconciliation-migrate:${{ github.sha }}"
+          image="noagent4u-migrate:${RELEASE_SHA}"
           expected_schemas="$RUNNER_TEMP/expected-schemas.txt"
           actual_schemas="$RUNNER_TEMP/actual-schemas.txt"
           expected_migrations="$RUNNER_TEMP/expected-migrations.txt"
@@ -70,31 +101,34 @@ jobs:
 
       - name: Verify Compose release gate
         run: |
-          synthetic_env=.env.production
           rendered_compose="$RUNNER_TEMP/rendered-compose.json"
-          cleanup() {
-            rm -f "$synthetic_env" "$rendered_compose"
-          }
-          trap cleanup EXIT
-
-          cp .env.production.example "$synthetic_env"
           docker compose --profile release \
-            --env-file "$synthetic_env" \
+            --env-file .env.production.example \
             -f docker-compose.production.yml \
             config --quiet
           docker compose --profile release \
-            --env-file "$synthetic_env" \
+            --env-file .env.production.example \
             -f docker-compose.production.yml \
             config --format json > "$rendered_compose"
 
           jq -e '.services.migrate.profiles == ["release"]' "$rendered_compose" > /dev/null
+          jq -e --arg sha "$RELEASE_SHA" '
+            .services.api.image == "noagent4u-api:\($sha)" and
+            .services.web.image == "noagent4u-web:\($sha)" and
+            .services.worker.image == "noagent4u-worker:\($sha)" and
+            .services.migrate.image == "noagent4u-migrate:\($sha)" and
+            .services.api.build.args.RELEASE_SHA == $sha and
+            .services.web.build.args.RELEASE_SHA == $sha and
+            .services.worker.build.args.RELEASE_SHA == $sha and
+            .services.migrate.build.args.RELEASE_SHA == $sha
+          ' "$rendered_compose" > /dev/null
 
           default_services="$(docker compose \
-            --env-file "$synthetic_env" \
+            --env-file .env.production.example \
             -f docker-compose.production.yml \
             config --services)"
           release_services="$(docker compose --profile release \
-            --env-file "$synthetic_env" \
+            --env-file .env.production.example \
             -f docker-compose.production.yml \
             config --services)"
 
