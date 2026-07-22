@@ -1,6 +1,9 @@
 FROM node:22-alpine AS build
+ARG RELEASE_SHA
 WORKDIR /app
 RUN corepack enable
+
+RUN printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json prisma.config.ts ./
 COPY apps/api/package.json apps/api/package.json
@@ -30,8 +33,13 @@ RUN SOURCE_CLIENT="$(readlink -f /app/node_modules/@prisma/client)" && \
     cp -a "$SOURCE_NODE_MODULES/.prisma" "$DEST_NODE_MODULES/.prisma"
 
 FROM node:22-alpine
+ARG RELEASE_SHA
 WORKDIR /app
 ENV NODE_ENV=production
+
+RUN printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+LABEL org.opencontainers.image.source="https://github.com/corusinfo-tech/rental-management-platform" \
+      org.opencontainers.image.revision="$RELEASE_SHA"
 
 COPY --from=build /opt/noagent4u-worker ./
 COPY --from=build /app/apps/worker/dist ./dist

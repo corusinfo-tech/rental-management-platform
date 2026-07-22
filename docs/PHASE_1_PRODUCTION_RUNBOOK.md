@@ -2,54 +2,173 @@
 
 Status: prepared only; not executed. Phase 2 is outside this runbook.
 
-Server checkout: `/opt/rentalos/rental-management-app`
+**No command in this document is authorized until a separate production approval names the exact release SHA, maintenance window, operator, and reviewer.** The existing production checkout is preservation evidence, not a deployment source.
 
-## Release controls
+## Release controls and immutable paths
 
-1. Obtain the approved Phase 1 implementation SHA from `PHASE_1_IMPLEMENTATION_REPORT.md`; call it `<approved-sha>` below. Copy this runbook to an operator-only execution worksheet, replace every angle-bracket placeholder, and have the operator and reviewer confirm that no placeholder remains before executing any command.
-2. Confirm the approved SHA is merged into the intended release branch, or record explicit approval to deploy the pinned feature-branch SHA. Do not deploy an unreviewed moving branch tip.
-3. Prefer a merge commit or another method that retains the locally validated commit as an ancestor. A squash or rebase produces different source and commit identities: repeat the complete Phase 1 validation against that resulting final SHA before approving it for production.
-4. Establish a maintenance window, assign an operator and reviewer, and identify the last known-good application SHA/image.
-5. Keep the additive Phase 1 database schema during application rollback. Never use `prisma migrate reset`, destructive reverse SQL, or `docker compose down -v`.
-
-Before continuing, define and validate the execution values in the operator-only shell. These example assignments are intentionally non-executable until every placeholder is replaced:
+The existing checkout is permanently treated as a preserved legacy checkout:
 
 ```bash
-export APPROVED_SHA='<approved-sha>'
-export APPROVED_RELEASE_BRANCH='<approved-release-branch>'
+export LEGACY_CHECKOUT=/opt/rentalos/rental-management-app
+export RELEASE_ROOT=/opt/rentalos/releases
+export RELEASE_SHA='<approved-full-40-character-sha>'
+export RELEASE_DIR="${RELEASE_ROOT}/${RELEASE_SHA}"
+export CANONICAL_REPOSITORY=https://github.com/corusinfo-tech/rental-management-platform.git
+export APPROVED_RELEASE_BRANCH=main
+export PRODUCTION_ENV_FILE='<approved-stable-production-env-path>'
+export RECONCILIATION_BACKUP='<existing-reconciliation-backup-path>'
+export EXPECTED_COMPOSE_PROJECT_NAME='<existing-compose-project-name-from-reviewed-records>'
+export EXPECTED_POSTGRES_VOLUME='<existing-postgres-volume-name>'
+export EXPECTED_REDIS_VOLUME='<existing-redis-volume-name>'
+export EXPECTED_ENV_OWNER='<approved-production-env-owner>'
+export EXPECTED_PRODUCTION_DB_NAME='<existing-production-database-name>'
+export EXPECTED_MIGRATION_SHA256='<reviewed-phase1-migration-sha256>'
+export MIN_RELEASE_FREE_KB='<reviewed-minimum-free-kilobytes>'
 export BACKUP_TIMESTAMP='<explicit-UTC-timestamp>'
 
-case "$APPROVED_SHA $APPROVED_RELEASE_BRANCH $BACKUP_TIMESTAMP" in
+case "$RELEASE_SHA $PRODUCTION_ENV_FILE $RECONCILIATION_BACKUP $EXPECTED_COMPOSE_PROJECT_NAME $EXPECTED_POSTGRES_VOLUME $EXPECTED_REDIS_VOLUME $EXPECTED_ENV_OWNER $EXPECTED_PRODUCTION_DB_NAME $EXPECTED_MIGRATION_SHA256 $MIN_RELEASE_FREE_KB $BACKUP_TIMESTAMP" in
   *'<'*'>'*) echo 'STOP: replace every runbook placeholder before execution' >&2; exit 1 ;;
 esac
+printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+printf '%s\n' "$EXPECTED_MIGRATION_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+printf '%s\n' "$MIN_RELEASE_FREE_KB" | grep -Eq '^[1-9][0-9]*$'
+test "$RELEASE_DIR" = "$RELEASE_ROOT/$RELEASE_SHA"
 ```
 
-## 1. Verify and pin source
+Never run `checkout`, `switch`, `reset`, `restore`, `clean`, `stash`, `pull`, `merge`, `rebase`, deletion, or any other mutating Git/filesystem command in `LEGACY_CHECKOUT`. Do not overwrite its three preserved tracked modifications, delete its reconciliation backup, copy its worktree or uncommitted contents into a release, or deploy directly from it. It may be inspected read-only only.
+
+Never run `prisma migrate reset`, destructive reverse SQL, or `docker compose down -v`. Preserve the legacy checkout, reconciliation backup, previous images, PostgreSQL and Redis volumes, and last known-good release for rollback.
+
+## 1. Read-only preflight
+
+Run this phase only after the separate production approval. It must not mutate the legacy checkout, containers, volumes, database, or environment file.
+
+### 1.1 Preserve and inspect the legacy checkout
 
 ```bash
-cd /opt/rentalos/rental-management-app
-git fetch --prune origin
-git status --short
-test -z "$(git status --porcelain)"
-git rev-parse HEAD
-git show --no-patch --format='%H %cI %s' "$APPROVED_SHA"
-git merge-base --is-ancestor "$APPROVED_SHA" "origin/$APPROVED_RELEASE_BRANCH"
-git switch --detach "$APPROVED_SHA"
-test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
-test -z "$(git status --porcelain)"
-git status --short
-shasum -a 256 prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql
+test -d "$LEGACY_CHECKOUT/.git"
+test -e "$RECONCILIATION_BACKUP"
+git -C "$LEGACY_CHECKOUT" status --short
+git -C "$LEGACY_CHECKOUT" diff --name-only
+git -C "$LEGACY_CHECKOUT" diff --cached --name-only
 ```
 
-Expected: the worktree is clean before and after pinning, `HEAD` equals the approved SHA, the merge-base check succeeds when a merged release is required, and the migration checksum matches the implementation report. If a squash/rebase made the locally validated SHA cease to be an ancestor, stop and validate the resulting release SHA from scratch. Stop if any result differs.
+Expected: the known preservation state is visible. Do not require this worktree to be clean and do not attempt to change it. Stop if the three preserved tracked modifications or reconciliation backup cannot be accounted for.
 
-## 2. Confirm authorization-token and session behavior
+### 1.2 Verify the approved GitHub source and release directory
 
-The accepted Phase 1 source signs access and refresh tokens with authoritative identity claims only (`sub` and `sid`, plus standard JWT claims). It does not embed role or permission claims. Every request verifies that the database Session is active, and organization roles/permissions are resolved from current database state. Therefore the accepted source does not require mass session revocation solely for the Phase 1 role conversion.
+```bash
+test "$CANONICAL_REPOSITORY" = 'https://github.com/corusinfo-tech/rental-management-platform.git'
+REMOTE_MAIN_SHA="$(git ls-remote "$CANONICAL_REPOSITORY" refs/heads/main | awk 'NR == 1 { print $1 }')"
+test "$REMOTE_MAIN_SHA" = "$RELEASE_SHA"
 
-Before deployment, verify that the pinned source and any upstream authentication proxy/custom build still have this behavior. Inspect source and decode only a reviewed synthetic token locally without logging or retaining the raw token. Stop if a token or external session cache treats `SUPER_ADMIN`, `OWNER`, `LANDLORD`, role lists, or permission lists as authoritative authorization claims.
+test -d "$RELEASE_ROOT" || test -d "$(dirname "$RELEASE_ROOT")"
+AVAILABLE_RELEASE_KB="$(df -Pk "$(dirname "$RELEASE_ROOT")" | awk 'NR == 2 { print $4 }')"
+test "$AVAILABLE_RELEASE_KB" -ge "$MIN_RELEASE_FREE_KB"
 
-If authoritative legacy roles/permissions are found, require forced reauthentication before reopening traffic. After snapshotting and with a reviewed database session, revoke every active session in one audited transaction:
+if test -e "$RELEASE_DIR"; then
+  test -d "$RELEASE_DIR/.git"
+  test "$(git -C "$RELEASE_DIR" remote get-url origin)" = "$CANONICAL_REPOSITORY"
+  test "$(git -C "$RELEASE_DIR" rev-parse HEAD)" = "$RELEASE_SHA"
+  test -z "$(git -C "$RELEASE_DIR" status --porcelain)"
+fi
+```
+
+Expected: canonical `main` resolves to the approved immutable SHA, adequate reviewed disk capacity exists, and an existing `RELEASE_DIR` is either absent or already contains exactly that clean canonical source. Stop rather than overwrite, reuse, or delete a directory containing different source.
+
+### 1.3 Discover and independently confirm Compose identity and volumes
+
+```bash
+API_CONTAINER_ID="$(docker ps -q --filter publish=3001 --filter label=com.docker.compose.service=api)"
+test "$(printf '%s\n' "$API_CONTAINER_ID" | sed '/^$/d' | wc -l | tr -d ' ')" -eq 1
+export COMPOSE_PROJECT_NAME="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$API_CONTAINER_ID")"
+test -n "$COMPOSE_PROJECT_NAME"
+test "$COMPOSE_PROJECT_NAME" = "$EXPECTED_COMPOSE_PROJECT_NAME"
+
+POSTGRES_CONTAINER_ID="$(docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter label=com.docker.compose.service=postgres)"
+REDIS_CONTAINER_ID="$(docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter label=com.docker.compose.service=redis)"
+test -n "$POSTGRES_CONTAINER_ID"
+test -n "$REDIS_CONTAINER_ID"
+
+DISCOVERED_POSTGRES_VOLUME="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' "$POSTGRES_CONTAINER_ID")"
+DISCOVERED_REDIS_VOLUME="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' "$REDIS_CONTAINER_ID")"
+test "$DISCOVERED_POSTGRES_VOLUME" = "$EXPECTED_POSTGRES_VOLUME"
+test "$DISCOVERED_REDIS_VOLUME" = "$EXPECTED_REDIS_VOLUME"
+docker volume inspect "$EXPECTED_POSTGRES_VOLUME" "$EXPECTED_REDIS_VOLUME" >/dev/null
+```
+
+The discovered project name must also match independently reviewed prior deployment evidence. Record the exact project and volume names before any build, migration, or container recreation. A mismatch is a hard stop.
+
+### 1.4 Verify the environment file without exposing it
+
+```bash
+test -f "$PRODUCTION_ENV_FILE"
+test ! -L "$PRODUCTION_ENV_FILE"
+test "$(stat -c '%U' "$PRODUCTION_ENV_FILE")" = "$EXPECTED_ENV_OWNER"
+ENV_MODE="$(stat -c '%a' "$PRODUCTION_ENV_FILE")"
+case "$ENV_MODE" in 600|640) ;; *) echo 'STOP: production environment permissions are too broad' >&2; exit 1 ;; esac
+```
+
+Do not print, source interactively, diff, hash publicly, commit, or include the environment file in release evidence. This runbook references an approved stable shared path rather than copying the file. If policy requires a copy instead, use an operator-reviewed secure copy that preserves the approved owner and mode, never copy from Git history, and set `PRODUCTION_ENV_FILE` to that restricted copy.
+
+### 1.5 Confirm smoke accounts and maintenance prerequisites
+
+Before proceeding, confirm synthetic or explicitly reviewed accounts/resources for platform administrator, organization proprietor/administrator, scoped manager, scoped finance user, asset owner, verified tenant, outsider, suspended user, and a second organization. Credentials must remain in the approved secret manager. Confirm the maintenance window, operator, reviewer, backup destination, last known-good release SHA/images, and rollback owner.
+
+## 2. Maintenance approval checkpoint
+
+The operator and reviewer must sign off the read-only preflight results before the first filesystem, backup, build, database, or container mutation. Approval must explicitly record:
+
+- `RELEASE_SHA`, canonical repository, and remote-main equality;
+- legacy checkout and reconciliation-backup preservation;
+- release disk capacity;
+- exact Compose project and PostgreSQL/Redis volume names;
+- restricted environment-file path, owner, and mode without its contents;
+- smoke-account availability and maintenance/rollback owners.
+
+Stop if any item is missing. This checkpoint does not authorize Phase 2 work.
+
+## 3. Create and verify the isolated release checkout
+
+Create source only from the canonical GitHub repository—never from `LEGACY_CHECKOUT`, a local bundle of its worktree, or its uncommitted contents.
+
+```bash
+if ! test -e "$RELEASE_DIR"; then
+  install -d -m 755 "$RELEASE_ROOT"
+  git clone --no-checkout "$CANONICAL_REPOSITORY" "$RELEASE_DIR"
+  git -C "$RELEASE_DIR" checkout --detach "$RELEASE_SHA"
+fi
+
+cd "$RELEASE_DIR"
+test "$(git remote get-url origin)" = "$CANONICAL_REPOSITORY"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+test -z "$(git status --porcelain)"
+git cat-file -e "$RELEASE_SHA^{commit}"
+test -f prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql
+test -f docs/PHASE_1_IMPLEMENTATION_REPORT.md
+test -f docs/PHASE_1_PRODUCTION_RUNBOOK.md
+test "$(shasum -a 256 prisma/migrations/20260719120000_phase1_authorization_isolation/migration.sql | awk '{print $1}')" = "$EXPECTED_MIGRATION_SHA256"
+test -z "$(find . -path ./.git -prune -o -type f \( -name '*.patch' -o -name '*PRESERVATION*' -o -name '*reconciliation-backup*' \) -print)"
+grep -Fxq '.env' .dockerignore
+grep -Fxq '.env.*' .dockerignore
+```
+
+Expected: detached `HEAD` equals the approved SHA, origin is canonical, the worktree is clean, expected commit/migration/report files exist, build context excludes environment files, and no preserved patch, reconciliation artifact, or legacy modification is present. All later commands run from `RELEASE_DIR`.
+
+## 4. Configuration and authorization preflight from the release
+
+```bash
+cd "$RELEASE_DIR"
+export APP_ENV_FILE="$PRODUCTION_ENV_FILE"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml --profile release config --quiet
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml --profile release config --services
+docker volume inspect "$EXPECTED_POSTGRES_VOLUME" "$EXPECTED_REDIS_VOLUME" >/dev/null
+```
+
+Expected services: `postgres`, `redis`, `api`, `migrate`, `web`, and `worker`. Do not output expanded Compose configuration because it can contain resolved secrets.
+
+Reconfirm the source signs access and refresh tokens with identity/session claims only and resolves current roles/permissions from the database. Inspect only reviewed synthetic tokens without logging them. If an access token, proxy, or external cache authorizes from `SUPER_ADMIN`, `OWNER`, `LANDLORD`, roles, or permissions, require forced reauthentication after backup and before reopening traffic. With a separately reviewed database session, revoke active sessions in one audited transaction:
 
 ```sql
 BEGIN;
@@ -62,152 +181,136 @@ WHERE "revokedAt" IS NULL
 COMMIT;
 ```
 
-Then restart API/worker as planned, verify old access and refresh tokens return 401, require all users to sign in again, and record the affected-session count without recording tokens or user data. If the behavior cannot be determined, treat forced reauthentication as a release gate rather than assuming cached authorization is safe.
+Record only the affected-session count. Verify old access/refresh tokens return 401 and require users to sign in again. If token behavior cannot be determined, forced reauthentication is a release gate.
 
-## 3. Confirm smoke-account availability
-
-Before building or migrating, the operator and reviewer must confirm that synthetic or explicitly reviewed smoke accounts and known resource IDs exist for every row below. Credentials must be retrievable from the approved secret manager and must never be added to this runbook, shell history, screenshots, or release logs.
-
-- [ ] Platform administrator
-- [ ] Organization proprietor/administrator
-- [ ] Scoped property manager
-- [ ] Scoped finance user
-- [ ] Asset owner
-- [ ] Verified tenant
-- [ ] Outsider
-- [ ] Suspended user
-- [ ] Administrator and resources in a second organization
-
-Stop if any account, its expected organization/property/lease scope, or a safe cross-organization negative-test resource is unavailable.
-
-## 4. Validate configuration without printing secrets
+## 5. PostgreSQL backup and optional restore test
 
 ```bash
-test -f .env.production
-docker compose --env-file .env.production -f docker-compose.production.yml --profile release config --quiet
-docker compose --env-file .env.production -f docker-compose.production.yml --profile release config --services
-```
-
-Expected services: `postgres`, `redis`, `api`, `migrate`, `web`, and `worker`. `config --quiet` must exit zero. Do not paste expanded Compose configuration into tickets or logs because it may contain resolved secrets.
-
-## 5. Snapshot PostgreSQL
-
-Create a root/operator-only backup directory outside the repository, then take and verify a logical snapshot before migration.
-
-```bash
+cd "$RELEASE_DIR"
 install -d -m 700 /opt/rentalos/backups
 export BACKUP_PATH="/opt/rentalos/backups/noagent4u-before-phase1-${BACKUP_TIMESTAMP}.dump"
-docker compose --env-file .env.production -f docker-compose.production.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$BACKUP_PATH"
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$BACKUP_PATH"
 test -s "$BACKUP_PATH"
-docker compose --env-file .env.production -f docker-compose.production.yml exec -T postgres sh -c 'pg_restore --list' < "$BACKUP_PATH" >/dev/null
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml exec -T postgres sh -c 'pg_restore --list' < "$BACKUP_PATH" >/dev/null
 ```
 
-Expected: a non-empty restricted backup whose archive listing validates. `pg_restore --list` proves archive readability only; it does not prove that the backup can be fully restored. Record its path, byte size, checksum, database host, and operator; never commit it.
+Record the restricted backup path, byte size, private checksum, database host, and operator without committing the archive or sensitive values. `pg_restore --list` proves readability only.
 
-When capacity and the maintenance window permit, perform the recommended full restore test on an isolated PostgreSQL instance. If the production PostgreSQL container is the only approved location, use a uniquely named temporary database, confirm that no application points to it, restore with `--exit-on-error`, run reviewed count/integrity checks, and drop only that exact temporary database afterward:
+When approved and capacity permits, perform a full restore test using a uniquely named isolated temporary database. Confirm no application points to it, run reviewed integrity checks, and drop only that exact database:
 
 ```bash
+cd "$RELEASE_DIR"
 export RESTORE_TEST_DB="phase1_restore_${BACKUP_TIMESTAMP}"
-docker compose --env-file .env.production -f docker-compose.production.yml exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" "$1"' sh "$RESTORE_TEST_DB"
-docker compose --env-file .env.production -f docker-compose.production.yml exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$1" --exit-on-error --no-owner --no-privileges' sh "$RESTORE_TEST_DB" < "$BACKUP_PATH"
+test "$RESTORE_TEST_DB" != "$EXPECTED_PRODUCTION_DB_NAME"
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" "$1"' sh "$RESTORE_TEST_DB"
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$1" --exit-on-error --no-owner --no-privileges' sh "$RESTORE_TEST_DB" < "$BACKUP_PATH"
 # Run reviewed row-count and integrity checks against only "$RESTORE_TEST_DB".
-docker compose --env-file .env.production -f docker-compose.production.yml exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" "$1"' sh "$RESTORE_TEST_DB"
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" "$1"' sh "$RESTORE_TEST_DB"
 ```
 
-Record whether the full restore test passed or was deferred, why it was deferred, and who accepted that residual risk. Never use the production database name as `RESTORE_TEST_DB`.
+Record whether the full restore passed or was explicitly deferred, including the reviewer accepting that residual risk.
 
-## 6. Record current migration status
+## 6. Build and verify immutable images
 
-Build the release migration target from the pinned SHA and run status through that image because the long-running API image intentionally omits Prisma migration files.
+Reconfirm volumes immediately before building:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.production.yml build migrate
-docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate ./node_modules/.bin/prisma migrate status --schema prisma/schemas
+cd "$RELEASE_DIR"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+docker volume inspect "$EXPECTED_POSTGRES_VOLUME" "$EXPECTED_REDIS_VOLUME" >/dev/null
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml --profile release build migrate api worker web
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml images
+
+for image in \
+  "noagent4u-api:$RELEASE_SHA" \
+  "noagent4u-web:$RELEASE_SHA" \
+  "noagent4u-worker:$RELEASE_SHA" \
+  "noagent4u-migrate:$RELEASE_SHA"; do
+  test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image")" = 'https://github.com/corusinfo-tech/rental-management-platform'
+  test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$RELEASE_SHA"
+  docker image inspect --format 'image={{.RepoTags}} id={{.Id}} digests={{.RepoDigests}} revision={{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image"
+done
 ```
 
-Expected before migration: either `Database schema is up to date!` or only `20260719120000_phase1_authorization_isolation` pending. Stop for failed/unknown migrations or drift.
+Record all SHA-qualified tags, OCI labels, image IDs, and registry digests where available. Do not remove previous images or the last known-good release.
 
-## 7. Build and execute migration
-
-The build command has four named targets: `migrate`, `api`, `worker`, and `web`.
+## 7. Migration status and execution
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.production.yml build migrate api worker web
-docker compose --env-file .env.production -f docker-compose.production.yml images
-docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate ./node_modules/.bin/prisma migrate deploy --schema prisma/schemas
-docker compose --env-file .env.production -f docker-compose.production.yml --profile release run --rm migrate ./node_modules/.bin/prisma migrate status --schema prisma/schemas
+cd "$RELEASE_DIR"
+docker volume inspect "$EXPECTED_POSTGRES_VOLUME" "$EXPECTED_REDIS_VOLUME" >/dev/null
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml --profile release run --rm migrate /app/node_modules/.bin/prisma migrate status --schema prisma/schemas
 ```
 
-Expected: all four builds succeed; migration exits zero; final status says the database schema is up to date. Capture the migration container output and the repository/tag/image-ID table from `docker compose images`.
+Expected before migration: up to date or only the reviewed Phase 1 migration pending. Stop for drift, failed/unknown migrations, an unexpected database, project-name mismatch, or volume mismatch.
 
-## 8. Deploy API, worker, and web
+After explicit migration approval:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.production.yml up -d --no-deps api worker
-docker compose --env-file .env.production -f docker-compose.production.yml up -d --no-deps web
-docker compose --env-file .env.production -f docker-compose.production.yml ps
-docker compose --env-file .env.production -f docker-compose.production.yml images
+cd "$RELEASE_DIR"
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml --profile release run --rm migrate /app/node_modules/.bin/prisma migrate deploy --schema prisma/schemas
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml --profile release run --rm migrate /app/node_modules/.bin/prisma migrate status --schema prisma/schemas
 ```
 
-Expected: `api`, `worker`, and `web` are running; API and worker become healthy. Confirm that the images were built from `$APPROVED_SHA` in the release evidence.
+Migration must exit zero and final status must be up to date before application deployment.
 
-## 9. Health and log checks
+## 8. Application deployment
 
 ```bash
+cd "$RELEASE_DIR"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+docker volume inspect "$EXPECTED_POSTGRES_VOLUME" "$EXPECTED_REDIS_VOLUME" >/dev/null
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml up -d --no-deps api worker
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml up -d --no-deps web
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml ps
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml images
+```
+
+Expected: the unchanged Compose project uses the existing production volumes and the inspected SHA-qualified API, worker, and web images. Never use `down -v`.
+
+## 9. Health, logs, and authenticated smoke tests
+
+```bash
+cd "$RELEASE_DIR"
 curl --fail --silent --show-error http://127.0.0.1:3001/health
 curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null
-docker compose --env-file .env.production -f docker-compose.production.yml ps
-docker compose --env-file .env.production -f docker-compose.production.yml logs --since=15m --no-color api worker web
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml ps
+docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$PRODUCTION_ENV_FILE" -f docker-compose.production.yml logs --since=15m --no-color api worker web
 ```
 
-Expected: both HTTP checks succeed, API/worker health is healthy, and logs contain no migration, Prisma, authorization, unhandled-exception, restart-loop, or database/Redis connectivity errors. The worker readiness endpoint is container-internal and is already exercised by its Compose healthcheck.
+Logs must show no migration, Prisma, authorization, unhandled-exception, restart-loop, database, or Redis errors. Use only designated smoke accounts and keep tokens out of shell history and evidence.
 
-## 10. Authenticated smoke matrix
+| Check | Expected result |
+| --- | --- |
+| Settings read and concurrent initialization | 200; exactly one settings row |
+| Platform administrator platform endpoint | 200 |
+| Platform administrator organization workspace without membership | 403 |
+| Organization proprietor/admin own organization | 200; organization-wide portfolio |
+| Scoped manager assigned versus unassigned/foreign property | 200 versus 403 |
+| Scoped finance assigned invoice/payment versus property management | 200 versus 403 |
+| Asset owner owned/assigned versus unowned property | 200 versus 403 |
+| Verified tenant linked versus unlinked lease/payment allocation | 200 versus 403 |
+| Outsider, suspended principal, or revoked assignment | 403 |
+| Direct second-organization resource attempt | 403 |
+| Ambiguous/multi-property historical payment for scoped user | 403 or omitted |
 
-Use designated synthetic production smoke accounts or reviewed non-sensitive fixtures. Keep access tokens out of shell history, screenshots, and the runbook. Record request timestamp, principal type, organization/property identifiers, status code, and a redacted result.
+Verify identifiers in allowed lists, not only status codes. Denials must not disclose whether a foreign resource exists.
 
-| Check                                                            | Expected result                                              |
-| ---------------------------------------------------------------- | ------------------------------------------------------------ |
-| Settings read for an existing organization                       | 200; exactly one Settings row remains after concurrent reads |
-| Platform administrator platform endpoint                         | 200                                                          |
-| Platform administrator organization workspace without membership | 403                                                          |
-| Organization proprietor/admin own organization                   | 200; organization-wide portfolio                             |
-| Scoped manager assigned property                                 | 200                                                          |
-| Scoped manager unassigned/direct or second-organization property | 403                                                          |
-| Scoped finance assigned invoice/payment                          | 200                                                          |
-| Scoped finance property-management endpoint                      | 403                                                          |
-| Asset owner owned or explicitly assigned property                | 200                                                          |
-| Asset owner unowned/unassigned property                          | 403                                                          |
-| Verified tenant linked lease/invoice/payment                     | 200 where an endpoint exists for the linked resource         |
-| Tenant unlinked lease or payment with any unlinked allocation    | 403                                                          |
-| Outsider, suspended principal, or revoked assignment             | 403                                                          |
-| Every direct second-organization resource attempt                | 403                                                          |
-| Ambiguous or multi-property historical payment for a scoped user | 403 or omitted from list                                     |
+## 10. Database invariants and completion evidence
 
-For each allowed list response, verify the returned identifiers—not only the HTTP status. For every denial, verify that the response does not disclose whether the foreign resource exists.
+With an approved read-only session, record counts—not row contents—showing one settings row per active organization; expected active platform principals; no cross-organization portfolio assignment, tenant link, or payment property; and denial of ambiguous/unmatched historical payments.
 
-## 11. Settings and database invariants
+Record the immutable release directory/SHA, canonical-origin proof, clean detached `HEAD`, preserved legacy-checkout evidence, reconciliation-backup presence, unchanged Compose project and volume names, restricted environment-file owner/mode confirmation without its path contents, backup evidence, migration status, image tags/IDs/digests/labels, container status, health/log results, session-revocation decision, and redacted smoke matrix. Never include secrets, tokens, database URLs, personal data, environment contents, backup contents, or preserved patches.
 
-With a reviewed read-only database session, record counts without exporting row contents:
+## 11. Rollback and forward-fix conditions
 
-- one `OrganizationSettings` row per active organization and no duplicate `organizationId`;
-- expected `PlatformPrincipal` count and no inactive/revoked principal authorized by smoke tests;
-- no active portfolio assignment whose property or membership belongs to another organization;
-- no verified tenant link without an accepted same-organization invitation and active membership;
-- no payment whose non-null property belongs to another organization;
-- ambiguous/unmatched historical payments remain null and denied.
+- **Before migration:** abort without changing application containers if source, preservation, identity, volume, environment, backup, build, provenance, or migration-status verification fails.
+- **Migration fails:** do not deploy new application containers. Preserve logs and snapshot; use reviewed Prisma failed-migration recovery or an additive forward migration—never reset production.
+- **Application fails before Phase 1-only writes:** redeploy the recorded last known-good SHA-qualified images using the same Compose project and volumes while retaining the additive schema.
+- **Phase 1-only writes occurred:** prefer a reviewed forward fix; do not deploy an incompatible older image.
+- **Authorization or cross-organization smoke test fails:** remove public traffic from the affected service, preserve evidence, revoke sessions if required, and forward-fix before reopening.
+- **Backfill is incorrect:** use an audited idempotent forward migration; do not drop Phase 1 structures.
 
-## 12. Completion evidence
+Keep `LEGACY_CHECKOUT`, `RECONCILIATION_BACKUP`, previous immutable release directories, previous images, and both production volumes until rollback is formally closed. Do not mutate the legacy checkout as part of rollback.
 
-Record the pinned SHA, proof that the validated SHA remains an ancestor, migration checksum, backup checksum/path, archive-readability result, full-restore-test result or accepted deferral, pre/post migration status, both `docker compose images` outputs, `docker compose ps`, session-revocation decision/action, smoke-account availability, health responses, redacted smoke matrix, and relevant log window. Keep secrets, tokens, database URLs, personal data, and backup contents out of the evidence package.
-
-## Rollback and forward-fix conditions
-
-- **Before migration:** abort with no application change if source, backup, configuration, build, or migration-status verification fails.
-- **Migration fails:** do not start new application containers. Preserve logs and snapshot; inspect `_prisma_migrations`. Use a reviewed forward migration or Prisma failed-migration recovery procedure—never reset production.
-- **Migration succeeds but application fails before Phase 1-only writes:** restore the last known-good API/worker/web images while retaining the additive schema.
-- **Phase 1-only writes have occurred:** prefer a reviewed forward fix. Do not run an older image that requires non-null legacy `Property.ownerUserId` without an approved compatibility backfill.
-- **Authorization smoke fails or any cross-organization access succeeds:** remove public traffic from the affected service, preserve evidence, revoke affected sessions if required, and forward-fix before reopening. Treat this as a release blocker.
-- **Backfill is incorrect:** correct data with an audited, idempotent forward migration. Do not drop the new platform-principal, portfolio, tenant-link, Settings, or payment-scope structures.
-
-Production deployment requires a separate explicit approval. This runbook does not authorize executing any server command.
+Production deployment requires a separate explicit approval. This runbook does not authorize executing any server, deployment, database, or migration command.

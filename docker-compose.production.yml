@@ -26,19 +26,27 @@ services:
       timeout: 5s
       retries: 10
   migrate:
+    image: noagent4u-migrate:${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
       target: migrate
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
     restart: 'no'
     profiles: ['release']
-    env_file: .env.production
+    env_file: ${APP_ENV_FILE:-.env.production}
     depends_on:
       postgres: { condition: service_healthy }
   api:
-    build: { context: ., dockerfile: apps/api/Dockerfile }
+    image: noagent4u-api:${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
     restart: unless-stopped
-    env_file: .env.production
+    env_file: ${APP_ENV_FILE:-.env.production}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -54,9 +62,14 @@ services:
       retries: 3
       start_period: 20s
   worker:
-    build: { context: ., dockerfile: apps/worker/Dockerfile }
+    image: noagent4u-worker:${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
     restart: unless-stopped
-    env_file: .env.production
+    env_file: ${APP_ENV_FILE:-.env.production}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -71,7 +84,12 @@ services:
       retries: 3
       start_period: 30s
   web:
-    build: { context: ., dockerfile: apps/web/Dockerfile }
+    image: noagent4u-web:${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA to the full 40-character Git commit SHA}
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:3001
